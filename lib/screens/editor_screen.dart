@@ -259,11 +259,16 @@ class _EditorScreenState extends State<EditorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
+    final navigator = Navigator.of(context);
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
         // Always check if empty and delete, or save if has content
         await _saveOrDeleteWriting();
-        return true;
+        if (mounted) {
+          navigator.pop();
+        }
       },
       child: Scaffold(
         backgroundColor: const Color(0xFFFFFFF8), // Slightly warm white, like paper
@@ -287,9 +292,10 @@ class _EditorScreenState extends State<EditorScreen> {
                   IconButton(
                     icon: const Icon(Icons.arrow_back, size: 28),
                     onPressed: () async {
+                      final navigator = Navigator.of(context);
                       await _saveOrDeleteWriting();
                       if (mounted) {
-                        Navigator.pop(context);
+                        navigator.pop();
                       }
                     },
                   ),
@@ -364,7 +370,7 @@ class _EditorScreenState extends State<EditorScreen> {
                       color: const Color(0xFFFFFFF8), // Paper white
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
+                          color: Colors.black.withValues(alpha: 0.1),
                           blurRadius: 20,
                           offset: const Offset(0, 4),
                         ),
@@ -474,7 +480,7 @@ class _ToolbarButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: isActive ? const Color(0xFF4A7C59).withOpacity(0.1) : Colors.transparent,
+      color: isActive ? const Color(0xFF4A7C59).withValues(alpha: 0.1) : Colors.transparent,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         onTap: onPressed,

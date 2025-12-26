@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart' as p;  // Cross-platform path handling
+import 'package:flutter/foundation.dart' show debugPrint;
 import '../models/writing.dart';
 import '../models/writing_metadata.dart';
 
@@ -36,7 +37,7 @@ class LocalStorageService {
     if (kIsWeb) {
       // Web: use browser's localStorage via SharedPreferences
       _prefs = await SharedPreferences.getInstance();
-      print('Local storage initialized (web mode - browser localStorage)');
+      debugPrint('Local storage initialized (web mode - browser localStorage)');
       return;
     }
     
@@ -48,7 +49,7 @@ class LocalStorageService {
       await _storageDir!.create(recursive: true);
     }
     
-    print('Local storage initialized at: ${_storageDir!.path}');
+    debugPrint('Local storage initialized at: ${_storageDir!.path}');
   }
 
   // ========== METADATA INDEX OPERATIONS ==========
@@ -75,7 +76,7 @@ class LocalStorageService {
     
     if (!await indexFile.exists()) {
       // First run or migration: build index from existing files
-      print('Metadata index not found, building from existing files...');
+      debugPrint('Metadata index not found, building from existing files...');
       final index = await _rebuildMetadataIndex();
       _metadataCache = index;
       return index;
@@ -85,10 +86,10 @@ class LocalStorageService {
       final jsonStr = await indexFile.readAsString();
       final json = jsonDecode(jsonStr) as Map<String, dynamic>;
       _metadataCache = MetadataIndex.fromJson(json);
-      print('Loaded metadata index: ${_metadataCache!.writings.length} writings');
+      debugPrint('Loaded metadata index: ${_metadataCache!.writings.length} writings');
       return _metadataCache!;
     } catch (e) {
-      print('Error loading metadata index, rebuilding: $e');
+      debugPrint('Error loading metadata index, rebuilding: $e');
       final index = await _rebuildMetadataIndex();
       _metadataCache = index;
       return index;
@@ -113,7 +114,7 @@ class LocalStorageService {
       _metadataCache = MetadataIndex.fromJson(json);
       return _metadataCache!;
     } catch (e) {
-      print('Error loading web metadata index, rebuilding: $e');
+      debugPrint('Error loading web metadata index, rebuilding: $e');
       final index = await _rebuildMetadataIndexWeb();
       _metadataCache = index;
       return index;
@@ -153,13 +154,13 @@ class LocalStorageService {
           metadataList.add(WritingMetadata.fromWriting(writing));
         }
       } catch (e) {
-        print('Error rebuilding metadata for ${file.path}: $e');
+        debugPrint('Error rebuilding metadata for ${file.path}: $e');
       }
     }
 
     final index = MetadataIndex(writings: metadataList);
     await saveMetadataIndex(index);
-    print('Rebuilt metadata index: ${metadataList.length} writings');
+    debugPrint('Rebuilt metadata index: ${metadataList.length} writings');
     return index;
   }
 
@@ -361,9 +362,9 @@ class LocalStorageService {
     if (existingFile != null && existingFile.path != targetFile.path) {
       try {
         await existingFile.delete();
-        print('Renamed file: ${p.basename(existingFile.path)} → $newFileName');
+        debugPrint('Renamed file: ${p.basename(existingFile.path)} → $newFileName');
       } catch (e) {
-        print('Warning: Could not delete old file: $e');
+        debugPrint('Warning: Could not delete old file: $e');
         // Not critical - old file is just orphaned, data is safe in new file
       }
     }
@@ -432,7 +433,7 @@ class LocalStorageService {
       try {
         await file.delete();
       } catch (e) {
-        print('Error deleting file: $e');
+        debugPrint('Error deleting file: $e');
       }
     }
   }
@@ -482,7 +483,7 @@ class LocalStorageService {
           writings.add(writing);
         }
       } catch (e) {
-        print('Error loading ${file.path}: $e');
+        debugPrint('Error loading ${file.path}: $e');
       }
     }
     return writings;
@@ -554,7 +555,7 @@ class LocalStorageService {
       final htmlContent = await file.readAsString();
       return _writingFromHtml(htmlContent);
     } catch (e) {
-      print('Error reading file ${file.path}: $e');
+      debugPrint('Error reading file ${file.path}: $e');
       return null;
     }
   }
@@ -670,7 +671,7 @@ class LocalStorageService {
         deletedAt: deletedAt,
       );
     } catch (e) {
-      print('Error parsing HTML: $e');
+      debugPrint('Error parsing HTML: $e');
       return null;
     }
   }

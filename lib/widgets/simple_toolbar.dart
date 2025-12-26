@@ -96,7 +96,7 @@ class _ToolbarButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: isActive ? const Color(0xFF4A7C59).withOpacity(0.1) : Colors.transparent,
+      color: isActive ? const Color(0xFF4A7C59).withValues(alpha: 0.1) : Colors.transparent,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         onTap: onPressed,

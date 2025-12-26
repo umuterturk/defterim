@@ -36,7 +36,7 @@ class _DefterimAppState extends State<DefterimApp> {
       );
       await FirebaseSyncService.instance.initialize();
     } catch (e) {
-      print('Firebase initialization failed: $e');
+      debugPrint('Firebase initialization failed: $e');
     }
     
     await initializeDateFormatting('tr_TR', null);

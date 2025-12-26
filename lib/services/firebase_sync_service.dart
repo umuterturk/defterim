@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 import '../models/writing.dart';
 import '../models/writing_metadata.dart';
 import 'local_storage_service.dart';
@@ -56,7 +57,7 @@ class FirebaseSyncService {
     if (_isOnline) {
       return await _initializeFirebase();
     } else {
-      print('Firebase: Starting offline - will sync when online');
+      debugPrint('Firebase: Starting offline - will sync when online');
       return false;
     }
   }
@@ -69,14 +70,14 @@ class FirebaseSyncService {
       
       if (!wasOnline && _isOnline) {
         // Just came online - try to initialize/sync
-        print('Firebase: Connectivity restored, attempting sync...');
+        debugPrint('Firebase: Connectivity restored, attempting sync...');
         if (!_isInitialized) {
           await _initializeFirebase();
         } else {
           await performIncrementalSync();
         }
       } else if (wasOnline && !_isOnline) {
-        print('Firebase: Going offline, local storage will be used');
+        debugPrint('Firebase: Going offline, local storage will be used');
       }
     });
   }
@@ -87,15 +88,15 @@ class FirebaseSyncService {
       // Automatically sign in anonymously (no user interaction)
       if (_auth.currentUser == null) {
         await _auth.signInAnonymously();
-        print('Firebase: Signed in anonymously');
+        debugPrint('Firebase: Signed in anonymously');
       }
       
       // Perform appropriate sync based on whether it's first time
       if (_isFirstSync) {
-        print('Firebase: First sync - downloading all data...');
+        debugPrint('Firebase: First sync - downloading all data...');
         await performFullSync();
       } else {
-        print('Firebase: Incremental sync - only fetching changes...');
+        debugPrint('Firebase: Incremental sync - only fetching changes...');
         await performIncrementalSync();
       }
       
@@ -111,10 +112,10 @@ class FirebaseSyncService {
       _listenToRemoteChanges();
       
       _isInitialized = true;
-      print('Firebase: Sync service initialized');
+      debugPrint('Firebase: Sync service initialized');
       return true;
     } catch (e) {
-      print('Firebase initialization error: $e');
+      debugPrint('Firebase initialization error: $e');
       return false;
     }
   }
@@ -134,7 +135,7 @@ class FirebaseSyncService {
 
       // Get ALL remote writings (first sync downloads everything)
       final snapshot = await collection.get();
-      print('Firebase: Downloaded ${snapshot.docs.length} documents');
+      debugPrint('Firebase: Downloaded ${snapshot.docs.length} documents');
 
       for (final doc in snapshot.docs) {
         final data = doc.data();
@@ -145,7 +146,7 @@ class FirebaseSyncService {
           // New from remote - save locally
           if (!remoteWriting.isDeleted) {
             await _localStorage.saveWriting(remoteWriting);
-            print('Firebase: Downloaded "${remoteWriting.title}"');
+            debugPrint('Firebase: Downloaded "${remoteWriting.title}"');
           }
         } else {
           // Exists locally - resolve conflict
@@ -160,7 +161,7 @@ class FirebaseSyncService {
           final localWriting = await _localStorage.getFullWriting(localMeta.id);
           if (localWriting != null) {
             await _uploadWriting(localWriting, collection);
-            print('Firebase: Uploaded new "${localWriting.title}"');
+            debugPrint('Firebase: Uploaded new "${localWriting.title}"');
           }
         }
       }
@@ -172,11 +173,11 @@ class FirebaseSyncService {
       // Cleanup old deleted writings
       await _cleanupSyncedDeletes();
 
-      print('Firebase: Full sync complete');
+      debugPrint('Firebase: Full sync complete');
       _notifySyncChanged();
 
     } catch (e) {
-      print('Error in full sync: $e');
+      debugPrint('Error in full sync: $e');
     } finally {
       _isSyncing = false;
     }
@@ -199,7 +200,7 @@ class FirebaseSyncService {
         return;
       }
 
-      print('Firebase: Incremental sync since ${lastSyncTime.toIso8601String()}');
+      debugPrint('Firebase: Incremental sync since ${lastSyncTime.toIso8601String()}');
 
       // Query only documents updated after lastSyncTime
       // This is where the Firestore index on 'updatedAt' is used
@@ -207,7 +208,7 @@ class FirebaseSyncService {
           .where('updatedAt', isGreaterThan: lastSyncTime.toIso8601String())
           .get();
 
-      print('Firebase: Found ${snapshot.docs.length} changed documents');
+      debugPrint('Firebase: Found ${snapshot.docs.length} changed documents');
 
       for (final doc in snapshot.docs) {
         final data = doc.data();
@@ -218,7 +219,7 @@ class FirebaseSyncService {
           // New from remote
           if (!remoteWriting.isDeleted) {
             await _localStorage.saveWriting(remoteWriting);
-            print('Firebase: Downloaded new "${remoteWriting.title}"');
+            debugPrint('Firebase: Downloaded new "${remoteWriting.title}"');
           }
         } else {
           // Resolve conflict
@@ -232,11 +233,11 @@ class FirebaseSyncService {
       // Update last sync time
       await _localStorage.updateLastSyncTime(syncStartTime);
 
-      print('Firebase: Incremental sync complete');
+      debugPrint('Firebase: Incremental sync complete');
       _notifySyncChanged();
 
     } catch (e) {
-      print('Error in incremental sync: $e');
+      debugPrint('Error in incremental sync: $e');
     } finally {
       _isSyncing = false;
     }
@@ -288,19 +289,19 @@ class FirebaseSyncService {
         // Remote was deleted - soft-delete locally too
         if (!localMeta.isDeleted) {
           await _localStorage.saveWriting(remoteWriting);
-          print('Firebase: Applied remote deletion for "${localMeta.title}"');
+          debugPrint('Firebase: Applied remote deletion for "${localMeta.title}"');
         }
       } else {
         // Remote has newer content
         await _localStorage.saveWriting(remoteWriting);
-        print('Firebase: Updated local "${remoteWriting.title}" (remote was newer)');
+        debugPrint('Firebase: Updated local "${remoteWriting.title}" (remote was newer)');
       }
     } else if (localNewer && !localMeta.isSynced) {
       // Local is newer and unsynced - upload local version
       final localWriting = await _localStorage.getFullWriting(localMeta.id);
       if (localWriting != null) {
         await _uploadWriting(localWriting, collection);
-        print('Firebase: Uploaded "${localWriting.title}" (local was newer)');
+        debugPrint('Firebase: Uploaded "${localWriting.title}" (local was newer)');
       }
     }
     // If timestamps are equal, they're already in sync
@@ -337,7 +338,7 @@ class FirebaseSyncService {
         final sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7));
         if (meta.deletedAt!.isBefore(sevenDaysAgo)) {
           await _localStorage.permanentlyDeleteWriting(meta.id);
-          print('Firebase: Permanently deleted old "${meta.title}"');
+          debugPrint('Firebase: Permanently deleted old "${meta.title}"');
         }
       }
     }
@@ -357,7 +358,7 @@ class FirebaseSyncService {
       await _uploadUnsyncedWritings();
       _notifySyncChanged();
     } catch (e) {
-      print('Sync error: $e');
+      debugPrint('Sync error: $e');
     } finally {
       _isSyncing = false;
     }
@@ -377,7 +378,7 @@ class FirebaseSyncService {
             await _uploadWriting(writing, collection);
           }
         } catch (e) {
-          print('Error syncing writing ${meta.id}: $e');
+          debugPrint('Error syncing writing ${meta.id}: $e');
         }
       }
     }
