@@ -1,0 +1,32 @@
+name: defterim
+description: A new Flutter project.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Firebase (automatic cloud sync)
+  firebase_core: ^3.0.0
+  cloud_firestore: ^5.0.0
+  firebase_auth: ^5.0.0
+  
+  # Utilities
+  uuid: ^4.3.3
+  intl: ^0.19.0
+  path_provider: ^2.1.2
+  shared_preferences: ^2.2.2
+  connectivity_plus: ^6.0.0
+  path: ^1.9.0  # Cross-platform path handling
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true

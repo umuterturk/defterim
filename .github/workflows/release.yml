@@ -1,0 +1,292 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: true
+        default: 'v0.1.0'
+
+env:
+  FLUTTER_VERSION: '3.24.0'
+
+jobs:
+  # Build Android APK
+  build-android:
+    name: Build Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+      
+      - name: Get dependencies
+        run: flutter pub get
+      
+      - name: Build APK
+        run: flutter build apk --release
+      
+      - name: Build App Bundle
+        run: flutter build appbundle --release
+      
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+      
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-aab
+          path: build/app/outputs/bundle/release/app-release.aab
+
+  # Build iOS IPA (requires macOS)
+  build-ios:
+    name: Build iOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+      
+      - name: Get dependencies
+        run: flutter pub get
+      
+      - name: Build iOS (no codesign)
+        run: flutter build ios --release --no-codesign
+      
+      - name: Create IPA directory
+        run: mkdir -p build/ios/ipa
+      
+      - name: Create Payload directory
+        run: |
+          mkdir -p Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -r build/ios/ipa/defterim-ios.ipa Payload
+          rm -rf Payload
+      
+      - name: Upload iOS build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: build/ios/ipa/defterim-ios.ipa
+
+  # Build macOS App
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+      
+      - name: Get dependencies
+        run: flutter pub get
+      
+      - name: Build macOS
+        run: flutter build macos --release
+      
+      - name: Create DMG
+        run: |
+          brew install create-dmg
+          create-dmg \
+            --volname "Defterim" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "Defterim.app" 150 185 \
+            --hide-extension "Defterim.app" \
+            --app-drop-link 450 185 \
+            "build/macos/Build/Products/Release/Defterim.dmg" \
+            "build/macos/Build/Products/Release/defterim.app" || true
+          
+          # Fallback: create zip if DMG fails
+          if [ ! -f "build/macos/Build/Products/Release/Defterim.dmg" ]; then
+            cd build/macos/Build/Products/Release
+            zip -r Defterim-macos.zip defterim.app
+          fi
+      
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: build/macos/Build/Products/Release/Defterim.dmg
+          if-no-files-found: ignore
+      
+      - name: Upload macOS ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-zip
+          path: build/macos/Build/Products/Release/Defterim-macos.zip
+          if-no-files-found: ignore
+
+  # Build Windows
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+      
+      - name: Get dependencies
+        run: flutter pub get
+      
+      - name: Build Windows
+        run: flutter build windows --release
+      
+      - name: Create ZIP archive
+        run: |
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath build\windows\Defterim-windows.zip
+      
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip
+          path: build/windows/Defterim-windows.zip
+
+  # Build Linux
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+      
+      - name: Get dependencies
+        run: flutter pub get
+      
+      - name: Build Linux
+        run: flutter build linux --release
+      
+      - name: Create tar.gz archive
+        run: |
+          cd build/linux/x64/release/bundle
+          tar -czvf ../../../Defterim-linux.tar.gz *
+      
+      - name: Upload Linux build
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-tar
+          path: build/linux/Defterim-linux.tar.gz
+
+  # Build Web
+  build-web:
+    name: Build Web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+      
+      - name: Get dependencies
+        run: flutter pub get
+      
+      - name: Build Web
+        run: flutter build web --release --base-href "/"
+      
+      - name: Create ZIP archive
+        run: |
+          cd build/web
+          zip -r ../Defterim-web.zip *
+      
+      - name: Upload Web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-zip
+          path: build/Defterim-web.zip
+
+  # Create GitHub Release
+  create-release:
+    name: Create Release
+    needs: [build-android, build-ios, build-macos, build-windows, build-linux, build-web]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      
+      - name: Display structure of downloaded files
+        run: ls -R artifacts
+      
+      - name: Get version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.get_version.outputs.VERSION }}
+          name: Defterim ${{ steps.get_version.outputs.VERSION }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            artifacts/android-apk/app-release.apk
+            artifacts/android-aab/app-release.aab
+            artifacts/ios-ipa/defterim-ios.ipa
+            artifacts/macos-dmg/Defterim.dmg
+            artifacts/macos-zip/Defterim-macos.zip
+            artifacts/windows-zip/Defterim-windows.zip
+            artifacts/linux-tar/Defterim-linux.tar.gz
+            artifacts/web-zip/Defterim-web.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
