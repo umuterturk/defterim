@@ -29,8 +29,8 @@ dev_dependencies:
   flutter_lints: ^2.0.0
 
 dependency_overrides:
-  # Fix win32 compatibility with Dart 3.5+
-  win32: ^5.5.0
+  # Pin win32 to version compatible with Dart 3.5 (Flutter 3.24)
+  win32: 5.5.4
 
 flutter:
   uses-material-design: true
