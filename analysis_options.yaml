@@ -1,1 +1,6 @@
 include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  errors:
+    # Suppress withOpacity deprecation - needed for Flutter 3.24.0 compatibility
+    deprecated_member_use: ignore
