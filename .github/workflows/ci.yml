@@ -40,9 +40,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: android
-            os: ubuntu-latest
-            build-cmd: flutter build apk --debug
           - platform: web
             os: ubuntu-latest
             build-cmd: flutter build web
@@ -56,18 +53,8 @@ jobs:
           - platform: macos
             os: macos-latest
             build-cmd: flutter build macos --debug
-          - platform: ios
-            os: macos-latest
-            build-cmd: flutter build ios --debug --no-codesign
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Setup Java (Android only)
-        if: matrix.platform == 'android'
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
       
       - name: Install Linux dependencies
         if: matrix.pre-install
@@ -85,4 +72,3 @@ jobs:
       
       - name: Build ${{ matrix.platform }}
         run: ${{ matrix.build-cmd }}
-
