@@ -85,7 +85,17 @@ class LocalStorageService {
     try {
       final jsonStr = await indexFile.readAsString();
       final json = jsonDecode(jsonStr) as Map<String, dynamic>;
-      _metadataCache = MetadataIndex.fromJson(json);
+      final loadedIndex = MetadataIndex.fromJson(json);
+      
+      // Check if metadata schema is outdated and needs rebuild
+      if (loadedIndex.needsRebuild) {
+        debugPrint('Metadata index version ${loadedIndex.version} is outdated, rebuilding to version ${MetadataIndex.currentVersion}...');
+        final index = await _rebuildMetadataIndex();
+        _metadataCache = index;
+        return index;
+      }
+      
+      _metadataCache = loadedIndex;
       debugPrint('Loaded metadata index: ${_metadataCache!.writings.length} writings');
       return _metadataCache!;
     } catch (e) {
@@ -111,7 +121,17 @@ class LocalStorageService {
 
     try {
       final json = jsonDecode(jsonStr) as Map<String, dynamic>;
-      _metadataCache = MetadataIndex.fromJson(json);
+      final loadedIndex = MetadataIndex.fromJson(json);
+      
+      // Check if metadata schema is outdated and needs rebuild
+      if (loadedIndex.needsRebuild) {
+        debugPrint('Metadata index version ${loadedIndex.version} is outdated, rebuilding to version ${MetadataIndex.currentVersion}...');
+        final index = await _rebuildMetadataIndexWeb();
+        _metadataCache = index;
+        return index;
+      }
+      
+      _metadataCache = loadedIndex;
       return _metadataCache!;
     } catch (e) {
       debugPrint('Error loading web metadata index, rebuilding: $e');

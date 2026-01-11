@@ -111,13 +111,23 @@ class WritingMetadata {
 
 /// Container for metadata index file
 class MetadataIndex {
+  /// Version for schema migrations - increment when metadata structure changes
+  /// Version 1: Initial
+  /// Version 2: Added type field for WritingType support
+  static const int currentVersion = 2;
+  
+  final int version;
   final DateTime? lastSyncTime;
   final List<WritingMetadata> writings;
 
   MetadataIndex({
+    this.version = currentVersion,
     this.lastSyncTime,
     required this.writings,
   });
+
+  /// Check if this index needs to be rebuilt (outdated version)
+  bool get needsRebuild => version < currentVersion;
 
   factory MetadataIndex.fromJson(Map<String, dynamic> json) {
     final writingsList = (json['writings'] as List<dynamic>?)
@@ -125,6 +135,7 @@ class MetadataIndex {
         .toList() ?? [];
     
     return MetadataIndex(
+      version: json['version'] ?? 1, // Default to version 1 for old data
       lastSyncTime: json['lastSyncTime'] != null 
           ? DateTime.parse(json['lastSyncTime']) 
           : null,
@@ -134,6 +145,7 @@ class MetadataIndex {
 
   Map<String, dynamic> toJson() {
     return {
+      'version': version,
       'lastSyncTime': lastSyncTime?.toIso8601String(),
       'writings': writings.map((w) => w.toJson()).toList(),
     };
@@ -141,10 +153,12 @@ class MetadataIndex {
 
   /// Create a copy with updated fields
   MetadataIndex copyWith({
+    int? version,
     DateTime? lastSyncTime,
     List<WritingMetadata>? writings,
   }) {
     return MetadataIndex(
+      version: version ?? this.version,
       lastSyncTime: lastSyncTime ?? this.lastSyncTime,
       writings: writings ?? this.writings,
     );
