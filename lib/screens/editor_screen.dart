@@ -36,10 +36,12 @@ class _EditorScreenState extends State<EditorScreen> {
   String _originalFooter = '';
   bool _originalIsBold = false;
   String _originalTextAlign = 'left';
+  WritingType _originalType = WritingType.siir;
   
-  // Text formatting state
+  // Text formatting state (kept for data compatibility)
   bool _isBold = false;
   TextAlign _textAlign = TextAlign.left;
+  WritingType _writingType = WritingType.siir;
 
   @override
   void initState() {
@@ -92,6 +94,7 @@ class _EditorScreenState extends State<EditorScreen> {
       _originalFooter = writing.footer;
       _originalIsBold = writing.isBold;
       _originalTextAlign = writing.textAlign;
+      _originalType = writing.type;
       
       setState(() {
         _writing = writing;
@@ -100,6 +103,7 @@ class _EditorScreenState extends State<EditorScreen> {
         _bodyController.text = writing.body;
         _isBold = writing.isBold;
         _textAlign = _parseTextAlign(writing.textAlign);
+        _writingType = writing.type;
         _hasUnsavedChanges = false;
       });
     }
@@ -113,7 +117,8 @@ class _EditorScreenState extends State<EditorScreen> {
            _bodyController.text != _originalBody ||
            _footerController.text != _originalFooter ||
            _isBold != _originalIsBold ||
-           _textAlignToString(_textAlign) != _originalTextAlign;
+           _textAlignToString(_textAlign) != _originalTextAlign ||
+           _writingType != _originalType;
   }
   
   TextAlign _parseTextAlign(String align) {
@@ -203,6 +208,7 @@ class _EditorScreenState extends State<EditorScreen> {
       isSynced: false,
       isBold: _isBold,
       textAlign: _textAlignToString(_textAlign),
+      type: _writingType,
     );
     
     await _storage.saveWriting(updatedWriting);
@@ -213,6 +219,7 @@ class _EditorScreenState extends State<EditorScreen> {
     _originalFooter = updatedWriting.footer;
     _originalIsBold = updatedWriting.isBold;
     _originalTextAlign = updatedWriting.textAlign;
+    _originalType = updatedWriting.type;
     
     setState(() {
       _writing = updatedWriting;
@@ -223,25 +230,38 @@ class _EditorScreenState extends State<EditorScreen> {
     _firebase.syncUnsyncedToCloud();
   }
 
-  void _toggleBold() {
+  void _setWritingType(WritingType type) {
     setState(() {
-      _isBold = !_isBold;
+      _writingType = type;
       _hasUnsavedChanges = _hasActualChanges();
     });
-    // Save immediately when formatting changes (no debounce) - only if changed
+    // Save immediately when type changes (no debounce) - only if changed
     if (_hasUnsavedChanges) {
       _saveWriting();
     }
   }
 
-  void _setAlignment(TextAlign align) {
-    setState(() {
-      _textAlign = align;
-      _hasUnsavedChanges = _hasActualChanges();
-    });
-    // Save immediately when formatting changes (no debounce) - only if changed
-    if (_hasUnsavedChanges) {
-      _saveWriting();
+  /// Get icon for writing type
+  IconData _getTypeIcon(WritingType type) {
+    switch (type) {
+      case WritingType.siir:
+        return Icons.auto_stories;
+      case WritingType.yazi:
+        return Icons.article;
+      case WritingType.diger:
+        return Icons.notes;
+    }
+  }
+
+  /// Get color for writing type
+  Color _getTypeColor(WritingType type) {
+    switch (type) {
+      case WritingType.siir:
+        return const Color(0xFF7B5EA7); // Purple for poems
+      case WritingType.yazi:
+        return const Color(0xFF4A7C59); // Green for prose
+      case WritingType.diger:
+        return const Color(0xFF5A8AB5); // Blue for other
     }
   }
 
@@ -268,6 +288,15 @@ class _EditorScreenState extends State<EditorScreen> {
     } else if (_hasUnsavedChanges) {
       // Has content and unsaved changes - save it
       await _saveWriting();
+    }
+  }
+
+  /// Navigate back to list (saves first)
+  Future<void> _goBack() async {
+    final navigator = Navigator.of(context);
+    await _saveOrDeleteWriting();
+    if (mounted) {
+      navigator.pop();
     }
   }
 
@@ -337,22 +366,18 @@ class _EditorScreenState extends State<EditorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final navigator = Navigator.of(context);
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         // Always check if empty and delete, or save if has content
-        await _saveOrDeleteWriting();
-        if (mounted) {
-          navigator.pop();
-        }
+        await _goBack();
       },
       child: Scaffold(
         backgroundColor: const Color(0xFFFFFFF8), // Slightly warm white, like paper
         body: Column(
           children: [
-            // Combined AppBar + Toolbar (saves vertical space)
+            // Simplified toolbar
             Container(
               padding: const EdgeInsets.only(top: 8, bottom: 8, left: 8, right: 16),
               decoration: BoxDecoration(
@@ -366,53 +391,49 @@ class _EditorScreenState extends State<EditorScreen> {
               ),
               child: Row(
                 children: [
-                  // Back button
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back, size: 28),
-                    onPressed: () async {
-                      final navigator = Navigator.of(context);
-                      await _saveOrDeleteWriting();
-                      if (mounted) {
-                        navigator.pop();
-                      }
-                    },
+                  // Back button (larger with label)
+                  Material(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
+                      onTap: _goBack,
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.arrow_back, size: 32, color: Color(0xFF4A7C59)),
+                            const SizedBox(width: 10),
+                            Text(
+                              'Geri',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                  const SizedBox(width: 8),
                   
-                  // Toolbar buttons
-                  _ToolbarButton(
-                    icon: Icons.format_bold,
-                    label: 'Kalın',
-                    isActive: _isBold,
-                    onPressed: _toggleBold,
-                  ),
-                  const SizedBox(width: 4),
-                  _ToolbarButton(
-                    icon: Icons.format_align_left,
-                    label: 'Sola',
-                    isActive: _textAlign == TextAlign.left,
-                    onPressed: () => _setAlignment(TextAlign.left),
-                  ),
-                  const SizedBox(width: 4),
-                  _ToolbarButton(
-                    icon: Icons.format_align_center,
-                    label: 'Ortaya',
-                    isActive: _textAlign == TextAlign.center,
-                    onPressed: () => _setAlignment(TextAlign.center),
-                  ),
-                  const SizedBox(width: 4),
-                  _ToolbarButton(
-                    icon: Icons.format_align_right,
-                    label: 'Sağa',
-                    isActive: _textAlign == TextAlign.right,
-                    onPressed: () => _setAlignment(TextAlign.right),
+                  const SizedBox(width: 20),
+                  
+                  // Writing type selector
+                  _WritingTypeSelector(
+                    currentType: _writingType,
+                    onTypeChanged: _setWritingType,
+                    getTypeIcon: _getTypeIcon,
+                    getTypeColor: _getTypeColor,
                   ),
                   
                   const Spacer(),
                   
                   // Delete button
                   IconButton(
-                    icon: const Icon(Icons.delete_outline, size: 26),
+                    icon: const Icon(Icons.delete_outline, size: 28),
                     color: Colors.grey[600],
                     tooltip: 'Sil',
                     onPressed: _confirmAndDelete,
@@ -425,12 +446,12 @@ class _EditorScreenState extends State<EditorScreen> {
                       ? const Icon(
                           Icons.edit,
                           color: Colors.orange,
-                          size: 22,
+                          size: 24,
                         )
                       : const Icon(
                           Icons.check_circle,
                           color: Colors.green,
-                          size: 22,
+                          size: 24,
                         ),
                 ],
               ),
@@ -507,7 +528,7 @@ class _EditorScreenState extends State<EditorScreen> {
                     
                     const SizedBox(height: 32),
                     
-                    // Body field (no divider, just space)
+                    // Body field
                     TextField(
                       controller: _bodyController,
                       style: TextStyle(
@@ -530,7 +551,7 @@ class _EditorScreenState extends State<EditorScreen> {
                     
                     const SizedBox(height: 60),
                     
-                    // Footer field (no divider, just space)
+                    // Footer field
                     TextField(
                       controller: _footerController,
                       style: TextStyle(
@@ -563,52 +584,95 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 }
 
-// Inline toolbar button widget
-class _ToolbarButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool isActive;
-  final VoidCallback onPressed;
+// Writing type selector dropdown widget
+class _WritingTypeSelector extends StatelessWidget {
+  final WritingType currentType;
+  final ValueChanged<WritingType> onTypeChanged;
+  final IconData Function(WritingType) getTypeIcon;
+  final Color Function(WritingType) getTypeColor;
 
-  const _ToolbarButton({
-    required this.icon,
-    required this.label,
-    required this.isActive,
-    required this.onPressed,
+  const _WritingTypeSelector({
+    required this.currentType,
+    required this.onTypeChanged,
+    required this.getTypeIcon,
+    required this.getTypeColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: isActive ? const Color(0xFF4A7C59).withOpacity(0.1) : Colors.transparent,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+    return PopupMenuButton<WritingType>(
+      onSelected: onTypeChanged,
+      offset: const Offset(0, 50),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      itemBuilder: (context) => WritingType.values.map((type) {
+        final isSelected = type == currentType;
+        return PopupMenuItem<WritingType>(
+          value: type,
+          child: Row(
             children: [
               Icon(
-                icon,
-                size: 24,
-                color: isActive ? const Color(0xFF4A7C59) : Colors.grey[700],
+                getTypeIcon(type),
+                size: 20,
+                color: isSelected ? getTypeColor(type) : Colors.grey[600],
               ),
-              const SizedBox(height: 2),
+              const SizedBox(width: 12),
               Text(
-                label,
+                type.displayName,
                 style: TextStyle(
-                  fontSize: 11,
-                  color: isActive ? const Color(0xFF4A7C59) : Colors.grey[700],
-                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                  fontSize: 16,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                  color: isSelected ? getTypeColor(type) : Colors.grey[800],
                 ),
               ),
+              if (isSelected) ...[
+                const Spacer(),
+                Icon(
+                  Icons.check,
+                  size: 18,
+                  color: getTypeColor(type),
+                ),
+              ],
             ],
           ),
+        );
+      }).toList(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: getTypeColor(currentType).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: getTypeColor(currentType).withOpacity(0.3),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              getTypeIcon(currentType),
+              size: 18,
+              color: getTypeColor(currentType),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              currentType.displayName,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: getTypeColor(currentType),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Icon(
+              Icons.arrow_drop_down,
+              size: 20,
+              color: getTypeColor(currentType),
+            ),
+          ],
         ),
       ),
     );
   }
 }
-

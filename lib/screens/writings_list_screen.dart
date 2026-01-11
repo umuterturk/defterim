@@ -152,13 +152,14 @@ class _WritingsListScreenState extends State<WritingsListScreen> {
     });
   }
 
-  Future<void> _createNewWriting() async {
+  Future<void> _createNewWriting(WritingType type) async {
     // Clear search before navigating
     _clearSearch();
     
-    // Create a new writing with empty title (will show placeholder in editor)
+    // Create a new writing with empty title and specified type
     final newWriting = Writing.create(
       title: '',  // Empty title - placeholder will show in editor
+      type: type,
     );
     
     // Save the new writing (this also updates metadata index)
@@ -221,17 +222,43 @@ class _WritingsListScreenState extends State<WritingsListScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _createNewWriting,
-        backgroundColor: const Color(0xFF4A7C59), // Calming green
-        icon: const Icon(Icons.add, size: 32, color: Colors.white),
-        label: const Text(
-          'Yeni Yazı',  // "New Writing"
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-          ),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Yeni Şiir button
+            FloatingActionButton.extended(
+              heroTag: 'newPoem',
+              onPressed: () => _createNewWriting(WritingType.siir),
+              backgroundColor: const Color(0xFF7C59A4), // Purple for poems
+              icon: const Icon(Icons.auto_stories, size: 28, color: Colors.white),
+              label: const Text(
+                'Yeni Şiir',  // "New Poem"
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            // Yeni Yazı button
+            FloatingActionButton.extended(
+              heroTag: 'newWriting',
+              onPressed: () => _createNewWriting(WritingType.yazi),
+              backgroundColor: const Color(0xFF4A7C59), // Calming green for prose
+              icon: const Icon(Icons.edit_note, size: 28, color: Colors.white),
+              label: const Text(
+                'Yeni Yazı',  // "New Writing/Prose"
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,

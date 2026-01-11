@@ -286,6 +286,7 @@ class FirebaseSyncService {
       updatedAt: DateTime.parse(data['updatedAt'] ?? DateTime.now().toIso8601String()),
       isSynced: true,
       deletedAt: deletedAt,
+      type: WritingTypeExtension.fromString(data['type']),
     );
   }
   
@@ -307,6 +308,7 @@ class FirebaseSyncService {
       isBold: data['isBold'] ?? false,
       textAlign: data['textAlign'] ?? 'left',
       deletedAt: deletedAt,
+      type: WritingTypeExtension.fromString(data['type']),
     );
   }
   
@@ -371,6 +373,7 @@ class FirebaseSyncService {
       'isBold': writing.isBold,
       'textAlign': writing.textAlign,
       'deletedAt': writing.deletedAt?.toIso8601String(),
+      'type': writing.type.value,
     });
     
     // Upload metadata (lightweight version for fast listing)
@@ -381,6 +384,7 @@ class FirebaseSyncService {
       'createdAt': writing.createdAt.toIso8601String(),
       'updatedAt': writing.updatedAt.toIso8601String(),
       'deletedAt': writing.deletedAt?.toIso8601String(),
+      'type': writing.type.value,
     });
     
     // Mark as synced locally

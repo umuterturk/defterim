@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/writing_metadata.dart';
+import '../models/writing.dart';
 
 /// Card widget for displaying a writing in the list
 /// Uses lightweight WritingMetadata (no body content loaded)
@@ -16,6 +17,30 @@ class WritingCard extends StatelessWidget {
     required this.metadata,
     required this.onTap,
   });
+
+  /// Get icon for writing type
+  IconData _getTypeIcon(WritingType type) {
+    switch (type) {
+      case WritingType.siir:
+        return Icons.auto_stories;
+      case WritingType.yazi:
+        return Icons.article;
+      case WritingType.diger:
+        return Icons.notes;
+    }
+  }
+
+  /// Get color for writing type
+  Color _getTypeColor(WritingType type) {
+    switch (type) {
+      case WritingType.siir:
+        return const Color(0xFF7B5EA7); // Purple for poems
+      case WritingType.yazi:
+        return const Color(0xFF4A7C59); // Green for prose
+      case WritingType.diger:
+        return const Color(0xFF5A8AB5); // Blue for other
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -63,7 +88,7 @@ class WritingCard extends StatelessWidget {
                 ),
               ],
               
-              // Date
+              // Date and Type
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -78,6 +103,37 @@ class WritingCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 16,
                       color: Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  // Type label
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _getTypeColor(metadata.type).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _getTypeColor(metadata.type).withOpacity(0.3),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _getTypeIcon(metadata.type),
+                          size: 14,
+                          color: _getTypeColor(metadata.type),
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          metadata.type.displayName,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: _getTypeColor(metadata.type),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const Spacer(),

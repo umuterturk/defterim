@@ -1,3 +1,5 @@
+import 'writing.dart';
+
 /// Lightweight metadata for list display (no body content)
 /// Used for fast app loading - full body loaded on-demand
 class WritingMetadata {
@@ -8,6 +10,7 @@ class WritingMetadata {
   final DateTime updatedAt;
   final bool isSynced;
   final DateTime? deletedAt;
+  final WritingType type; // Type of writing (poem, story, other)
 
   WritingMetadata({
     required this.id,
@@ -17,6 +20,7 @@ class WritingMetadata {
     required this.updatedAt,
     this.isSynced = false,
     this.deletedAt,
+    this.type = WritingType.siir, // Default to poem
   });
 
   /// Whether this writing is soft-deleted
@@ -32,6 +36,7 @@ class WritingMetadata {
       updatedAt: writing.updatedAt,
       isSynced: writing.isSynced,
       deletedAt: writing.deletedAt,
+      type: writing.type ?? WritingType.siir,
     );
   }
 
@@ -45,6 +50,7 @@ class WritingMetadata {
       updatedAt: DateTime.parse(json['updatedAt']),
       isSynced: json['isSynced'] ?? false,
       deletedAt: json['deletedAt'] != null ? DateTime.parse(json['deletedAt']) : null,
+      type: WritingTypeExtension.fromString(json['type']),
     );
   }
 
@@ -58,6 +64,7 @@ class WritingMetadata {
       'updatedAt': updatedAt.toIso8601String(),
       'isSynced': isSynced,
       'deletedAt': deletedAt?.toIso8601String(),
+      'type': type.value,
     };
   }
 
@@ -69,6 +76,7 @@ class WritingMetadata {
     bool? isSynced,
     DateTime? deletedAt,
     bool clearDeletedAt = false,
+    WritingType? type,
   }) {
     return WritingMetadata(
       id: id,
@@ -78,6 +86,7 @@ class WritingMetadata {
       updatedAt: updatedAt ?? this.updatedAt,
       isSynced: isSynced ?? this.isSynced,
       deletedAt: clearDeletedAt ? null : (deletedAt ?? this.deletedAt),
+      type: type ?? this.type,
     );
   }
 

@@ -393,6 +393,7 @@ class LocalStorageService {
       'isBold': w.isBold,
       'textAlign': w.textAlign,
       'deletedAt': w.deletedAt?.toIso8601String(),
+      'type': w.type.value,
     };
   }
 
@@ -506,6 +507,7 @@ class LocalStorageService {
         isBold: data['isBold'] ?? false,
         textAlign: data['textAlign'] ?? 'left',
         deletedAt: data['deletedAt'] != null ? DateTime.parse(data['deletedAt']) : null,
+        type: WritingTypeExtension.fromString(data['type']),
       );
     }).toList();
   }
@@ -581,6 +583,7 @@ class LocalStorageService {
   <meta name="defterim:align" content="$textAlign">
   <meta name="defterim:synced" content="${writing.isSynced}">
   <meta name="defterim:deleted" content="$deletedAt">
+  <meta name="defterim:type" content="${writing.type.value}">
   
   <title>${writing.title.isEmpty ? 'Başlıksız Yazı' : _escapeHtml(writing.title)}</title>
   
@@ -641,6 +644,7 @@ class LocalStorageService {
       final alignMatch = RegExp(r'<meta name="defterim:align" content="([^"]+)">').firstMatch(html);
       final syncedMatch = RegExp(r'<meta name="defterim:synced" content="([^"]+)">').firstMatch(html);
       final deletedMatch = RegExp(r'<meta name="defterim:deleted" content="([^"]*)">').firstMatch(html);
+      final typeMatch = RegExp(r'<meta name="defterim:type" content="([^"]*)">').firstMatch(html);
       
       final titleMatch = RegExp(r'<title>([^<]+)</title>').firstMatch(html);
       final title = titleMatch != null ? _unescapeHtml(titleMatch.group(1)!) : '';
@@ -669,6 +673,7 @@ class LocalStorageService {
         isBold: boldMatch?.group(1) == 'true',
         textAlign: alignMatch?.group(1) ?? 'left',
         deletedAt: deletedAt,
+        type: WritingTypeExtension.fromString(typeMatch?.group(1)),
       );
     } catch (e) {
       debugPrint('Error parsing HTML: $e');

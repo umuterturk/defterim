@@ -1,3 +1,48 @@
+/// Writing types
+enum WritingType {
+  siir,   // Şiir (Poem)
+  yazi,   // Yazı (Writing/Prose)
+  diger,  // Diğer (Other)
+}
+
+/// Extension to convert WritingType to/from string
+extension WritingTypeExtension on WritingType {
+  String get displayName {
+    switch (this) {
+      case WritingType.siir:
+        return 'Şiir';
+      case WritingType.yazi:
+        return 'Yazı';
+      case WritingType.diger:
+        return 'Diğer';
+    }
+  }
+
+  String get value {
+    switch (this) {
+      case WritingType.siir:
+        return 'siir';
+      case WritingType.yazi:
+        return 'yazi';
+      case WritingType.diger:
+        return 'diger';
+    }
+  }
+
+  static WritingType fromString(String? value) {
+    switch (value) {
+      case 'siir':
+        return WritingType.siir;
+      case 'yazi':
+        return WritingType.yazi;
+      case 'diger':
+        return WritingType.diger;
+      default:
+        return WritingType.siir; // Default to poem
+    }
+  }
+}
+
 /// Represents a single writing/poem/note
 class Writing {
   final String id;
@@ -10,6 +55,7 @@ class Writing {
   bool isBold;
   String textAlign; // 'left', 'center', 'right'
   DateTime? deletedAt; // Soft-delete timestamp (null = not deleted)
+  WritingType type; // Type of writing (poem, story, other)
 
   Writing({
     required this.id,
@@ -22,6 +68,7 @@ class Writing {
     this.isBold = false,
     this.textAlign = 'left',
     this.deletedAt,
+    this.type = WritingType.siir, // Default to poem
   });
 
   /// Whether this writing is soft-deleted
@@ -34,6 +81,7 @@ class Writing {
     String footer = '',
     bool isBold = false,
     String textAlign = 'left',
+    WritingType type = WritingType.siir,
   }) {
     final now = DateTime.now();
     return Writing(
@@ -47,6 +95,7 @@ class Writing {
       isBold: isBold,
       textAlign: textAlign,
       deletedAt: null,
+      type: type,
     );
   }
 
@@ -61,6 +110,7 @@ class Writing {
     String? textAlign,
     DateTime? deletedAt,
     bool clearDeletedAt = false,
+    WritingType? type,
   }) {
     return Writing(
       id: id,
@@ -73,6 +123,7 @@ class Writing {
       isBold: isBold ?? this.isBold,
       textAlign: textAlign ?? this.textAlign,
       deletedAt: clearDeletedAt ? null : (deletedAt ?? this.deletedAt),
+      type: type ?? this.type,
     );
   }
 
