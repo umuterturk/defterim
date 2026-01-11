@@ -5,6 +5,9 @@ import '../models/writing_metadata.dart';
 /// Card widget for displaying a writing in the list
 /// Uses lightweight WritingMetadata (no body content loaded)
 class WritingCard extends StatelessWidget {
+  // Static DateFormat - created once, reused across all cards
+  static final DateFormat _dateFormat = DateFormat('d MMMM yyyy', 'tr_TR');
+  
   final WritingMetadata metadata;
   final VoidCallback onTap;
 
@@ -16,7 +19,6 @@ class WritingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dateFormat = DateFormat('d MMMM yyyy', 'tr_TR');
     
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -72,7 +74,7 @@ class WritingCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    dateFormat.format(metadata.updatedAt),
+                    _dateFormat.format(metadata.updatedAt),
                     style: TextStyle(
                       fontSize: 16,
                       color: Colors.grey[600],

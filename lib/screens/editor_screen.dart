@@ -28,6 +28,14 @@ class _EditorScreenState extends State<EditorScreen> {
   Writing? _writing;
   Timer? _autoSaveTimer;
   bool _hasUnsavedChanges = false;
+  bool _isLoadingBody = false;
+  
+  // Original content for change detection
+  String _originalTitle = '';
+  String _originalBody = '';
+  String _originalFooter = '';
+  bool _originalIsBold = false;
+  String _originalTextAlign = 'left';
   
   // Text formatting state
   bool _isBold = false;
@@ -42,30 +50,70 @@ class _EditorScreenState extends State<EditorScreen> {
     _bodyController = TextEditingController();
     _footerController = TextEditingController();
     
-    // Then load writing
-    _loadWriting();
-    
     // Listen to text changes for autosave
     _titleController.addListener(_onTextChanged);
     _bodyController.addListener(_onTextChanged);
     _footerController.addListener(_onTextChanged);
+    
+    // Then load writing (after listeners are set up)
+    _loadWriting();
   }
 
   Future<void> _loadWriting() async {
-    // Load full body content on-demand (optimized: metadata loaded earlier)
-    final writing = await _storage.getFullWriting(widget.writingId);
+    // First try to load from local storage
+    Writing? writing = await _storage.getFullWriting(widget.writingId);
+    
+    // If not found locally (metadata-only sync), fetch body from Firestore
+    if (writing == null) {
+      // Check if we have metadata for this writing
+      final metadata = await _storage.getWritingMetadata(widget.writingId);
+      if (metadata != null && mounted) {
+        // Show loading state with metadata while fetching body
+        setState(() {
+          _isLoadingBody = true;
+          _titleController.text = metadata.title;
+        });
+        
+        // Fetch full body from Firestore
+        writing = await _firebase.fetchWritingBody(widget.writingId);
+        
+        if (mounted) {
+          setState(() {
+            _isLoadingBody = false;
+          });
+        }
+      }
+    }
+    
     if (writing != null && mounted) {
+      // Store original values for change detection
+      _originalTitle = writing.title;
+      _originalBody = writing.body;
+      _originalFooter = writing.footer;
+      _originalIsBold = writing.isBold;
+      _originalTextAlign = writing.textAlign;
+      
       setState(() {
         _writing = writing;
-        _titleController.text = writing.title;
+        _titleController.text = writing!.title;
         _footerController.text = writing.footer;
-        
-        // Body is plain text (HTML parsing done by storage service)
         _bodyController.text = writing.body;
         _isBold = writing.isBold;
         _textAlign = _parseTextAlign(writing.textAlign);
+        _hasUnsavedChanges = false;
       });
     }
+  }
+  
+  /// Check if content has actually changed from original
+  bool _hasActualChanges() {
+    if (_writing == null) return false;
+    
+    return _titleController.text != _originalTitle ||
+           _bodyController.text != _originalBody ||
+           _footerController.text != _originalFooter ||
+           _isBold != _originalIsBold ||
+           _textAlignToString(_textAlign) != _originalTextAlign;
   }
   
   TextAlign _parseTextAlign(String align) {
@@ -91,11 +139,20 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   void _onTextChanged() {
-    // Only mark as unsaved, don't trigger save yet
-    if (!_hasUnsavedChanges) {
+    // Check if content has actually changed from original
+    final hasChanges = _hasActualChanges();
+    
+    // Update UI state if changed
+    if (_hasUnsavedChanges != hasChanges) {
       setState(() {
-        _hasUnsavedChanges = true;
+        _hasUnsavedChanges = hasChanges;
       });
+    }
+    
+    // Only schedule save if there are actual changes
+    if (!hasChanges) {
+      _autoSaveTimer?.cancel();
+      return;
     }
     
     // Cancel existing timer
@@ -109,6 +166,14 @@ class _EditorScreenState extends State<EditorScreen> {
 
   Future<void> _saveWriting() async {
     if (_writing == null) return;
+    
+    // Don't save if there are no actual changes
+    if (!_hasActualChanges()) {
+      setState(() {
+        _hasUnsavedChanges = false;
+      });
+      return;
+    }
     
     // Don't save if all fields are empty
     final hasContent = _titleController.text.trim().isNotEmpty ||
@@ -142,6 +207,13 @@ class _EditorScreenState extends State<EditorScreen> {
     
     await _storage.saveWriting(updatedWriting);
     
+    // Update original values after successful save
+    _originalTitle = updatedWriting.title;
+    _originalBody = updatedWriting.body;
+    _originalFooter = updatedWriting.footer;
+    _originalIsBold = updatedWriting.isBold;
+    _originalTextAlign = updatedWriting.textAlign;
+    
     setState(() {
       _writing = updatedWriting;
       _hasUnsavedChanges = false;
@@ -154,17 +226,23 @@ class _EditorScreenState extends State<EditorScreen> {
   void _toggleBold() {
     setState(() {
       _isBold = !_isBold;
+      _hasUnsavedChanges = _hasActualChanges();
     });
-    // Save immediately when formatting changes (no debounce)
-    _saveWriting();
+    // Save immediately when formatting changes (no debounce) - only if changed
+    if (_hasUnsavedChanges) {
+      _saveWriting();
+    }
   }
 
   void _setAlignment(TextAlign align) {
     setState(() {
       _textAlign = align;
+      _hasUnsavedChanges = _hasActualChanges();
     });
-    // Save immediately when formatting changes (no debounce)
-    _saveWriting();
+    // Save immediately when formatting changes (no debounce) - only if changed
+    if (_hasUnsavedChanges) {
+      _saveWriting();
+    }
   }
 
   @override
@@ -380,7 +458,29 @@ class _EditorScreenState extends State<EditorScreen> {
                         width: 1,
                       ),
                     ),
-                    child: SingleChildScrollView(
+                    child: _isLoadingBody
+                        ? const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(60),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  CircularProgressIndicator(
+                                    color: Color(0xFF4A7C59),
+                                  ),
+                                  SizedBox(height: 16),
+                                  Text(
+                                    'İçerik yükleniyor...',
+                                    style: TextStyle(
+                                      color: Color(0xFF666666),
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : SingleChildScrollView(
                       padding: const EdgeInsets.all(60), // Generous notebook margins
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -451,8 +551,8 @@ class _EditorScreenState extends State<EditorScreen> {
                     ),
                       ],
                       ),
-                    ),
-                  ),
+                    ), // end of SingleChildScrollView
+                  ), // end of ternary (Container child)
                 ),
               ),
             ),

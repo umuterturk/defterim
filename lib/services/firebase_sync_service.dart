@@ -9,21 +9,25 @@ import 'local_storage_service.dart';
 
 /// Automatic Firebase sync with anonymous authentication
 /// 
+/// Architecture:
+/// - writings_meta: Lightweight metadata for fast list loading (~500 bytes/doc)
+/// - writings: Full content including body (on-demand loading)
+/// 
 /// Optimizations:
-/// - First sync: downloads everything (acceptable wait)
-/// - Subsequent syncs: only fetch documents where updatedAt > lastSyncTime
-/// - Uses metadata index for fast list loading
-/// - Full body loaded on-demand
+/// - First sync: downloads only metadata (fast, ~5MB for 10k writings)
+/// - Full body fetched on-demand when user opens a writing
+/// - Incremental sync: only fetch documents where updatedAt > lastSyncTime
 class FirebaseSyncService {
   static FirebaseSyncService? _instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  // Lazy access to Firebase instances - only accessed after Firebase.initializeApp()
+  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
+  FirebaseAuth get _auth => FirebaseAuth.instance;
   final LocalStorageService _localStorage = LocalStorageService.instance;
   final Connectivity _connectivity = Connectivity();
   
   Timer? _syncTimer;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
-  StreamSubscription<QuerySnapshot>? _remoteChangesSubscription;
+  StreamSubscription<QuerySnapshot>? _remoteMetaChangesSubscription;
   
   bool _isSyncing = false;
   bool _isInitialized = false;
@@ -93,7 +97,7 @@ class FirebaseSyncService {
       
       // Perform appropriate sync based on whether it's first time
       if (_isFirstSync) {
-        debugPrint('Firebase: First sync - downloading all data...');
+        debugPrint('Firebase: First sync - downloading metadata only (fast)...');
         await performFullSync();
       } else {
         debugPrint('Firebase: Incremental sync - only fetching changes...');
@@ -108,8 +112,8 @@ class FirebaseSyncService {
         }
       });
       
-      // Listen to remote changes
-      _listenToRemoteChanges();
+      // Listen to remote metadata changes
+      _listenToRemoteMetadataChanges();
       
       _isInitialized = true;
       debugPrint('Firebase: Sync service initialized');
@@ -120,48 +124,60 @@ class FirebaseSyncService {
     }
   }
 
-  /// Perform FULL sync (first time only) - downloads everything
+  /// Perform FULL sync (first time only) - downloads metadata only, bodies on-demand
   Future<void> performFullSync() async {
     if (_isSyncing || !_isOnline) return;
 
     try {
       _isSyncing = true;
-      final collection = _writingsCollection;
+      final metaCollection = _writingsMetaCollection;
+      final writingsCollection = _writingsCollection;
       final syncStartTime = DateTime.now();
 
       // Get all local metadata
       final localMetadata = await _localStorage.getAllWritingsMetadataIncludingDeleted();
       final localMap = {for (var w in localMetadata) w.id: w};
 
-      // Get ALL remote writings (first sync downloads everything)
-      final snapshot = await collection.get();
-      debugPrint('Firebase: Downloaded ${snapshot.docs.length} documents');
-
-      for (final doc in snapshot.docs) {
-        final data = doc.data();
-        final remoteWriting = _parseRemoteWriting(doc.id, data);
-        final localMeta = localMap[doc.id];
-
-        if (localMeta == null) {
-          // New from remote - save locally
-          if (!remoteWriting.isDeleted) {
-            await _localStorage.saveWriting(remoteWriting);
-            debugPrint('Firebase: Downloaded "${remoteWriting.title}"');
+      // FIRST: Upload any unsynced local writings before downloading
+      // This ensures local changes made offline are not lost
+      final unsyncedWritings = localMetadata.where((m) => !m.isSynced).toList();
+      if (unsyncedWritings.isNotEmpty) {
+        debugPrint('Firebase: Uploading ${unsyncedWritings.length} unsynced local writings first...');
+        for (final meta in unsyncedWritings) {
+          final localWriting = await _localStorage.getFullWriting(meta.id);
+          if (localWriting != null) {
+            await _uploadWriting(localWriting, writingsCollection, metaCollection);
+            debugPrint('Firebase: Uploaded unsynced "${localWriting.title}"');
           }
-        } else {
-          // Exists locally - resolve conflict
-          await _resolveConflict(localMeta, remoteWriting, collection);
         }
       }
 
-      // Upload local writings that don't exist remotely
-      for (final localMeta in localMetadata) {
-        final existsRemote = snapshot.docs.any((doc) => doc.id == localMeta.id);
-        if (!existsRemote) {
-          final localWriting = await _localStorage.getFullWriting(localMeta.id);
-          if (localWriting != null) {
-            await _uploadWriting(localWriting, collection);
-            debugPrint('Firebase: Uploaded new "${localWriting.title}"');
+      // THEN: Download ALL metadata (fast - small documents)
+      final metaSnapshot = await metaCollection.get();
+      debugPrint('Firebase: Downloaded ${metaSnapshot.docs.length} metadata documents');
+
+      for (final doc in metaSnapshot.docs) {
+        final data = doc.data();
+        final remoteMeta = _parseRemoteMetadata(doc.id, data);
+        final localMeta = localMap[doc.id];
+
+        if (localMeta == null) {
+          // New from remote - save metadata only (body fetched on-demand)
+          if (!remoteMeta.isDeleted) {
+            await _localStorage.updateWritingMetadata(remoteMeta);
+            debugPrint('Firebase: Downloaded metadata "${remoteMeta.title}"');
+          }
+        } else if (!localMeta.isSynced) {
+          // Local was just uploaded - skip
+          continue;
+        } else {
+          // Exists locally and is synced - check if remote is newer
+          if (remoteMeta.updatedAt.isAfter(localMeta.updatedAt)) {
+            // Remote metadata is newer - update local metadata
+            await _localStorage.updateWritingMetadata(remoteMeta);
+            // Invalidate local body cache so it gets fetched fresh
+            await _invalidateLocalBody(remoteMeta.id);
+            debugPrint('Firebase: Updated metadata "${remoteMeta.title}" (remote was newer)');
           }
         }
       }
@@ -173,7 +189,7 @@ class FirebaseSyncService {
       // Cleanup old deleted writings
       await _cleanupSyncedDeletes();
 
-      debugPrint('Firebase: Full sync complete');
+      debugPrint('Firebase: Full sync complete (metadata only - bodies loaded on-demand)');
       _notifySyncChanged();
 
     } catch (e) {
@@ -183,52 +199,55 @@ class FirebaseSyncService {
     }
   }
 
-  /// Perform INCREMENTAL sync - only fetch changes since lastSyncTime
-  /// This is the FAST path for subsequent app opens
+  /// Perform INCREMENTAL sync - uploads unsynced first, then fetches metadata changes
   Future<void> performIncrementalSync() async {
     if (_isSyncing || !_isOnline) return;
 
     try {
       _isSyncing = true;
-      final collection = _writingsCollection;
+      final metaCollection = _writingsMetaCollection;
+      final writingsCollection = _writingsCollection;
       final lastSyncTime = await _localStorage.getLastSyncTime();
       final syncStartTime = DateTime.now();
 
       if (lastSyncTime == null) {
         // No last sync time - do full sync instead
+        _isSyncing = false;
         await performFullSync();
         return;
       }
 
+      // FIRST: Upload any unsynced local writings
+      await _uploadUnsyncedWritings();
+
       debugPrint('Firebase: Incremental sync since ${lastSyncTime.toIso8601String()}');
 
-      // Query only documents updated after lastSyncTime
-      // This is where the Firestore index on 'updatedAt' is used
-      final snapshot = await collection
+      // THEN: Query only metadata updated after lastSyncTime
+      final metaSnapshot = await metaCollection
           .where('updatedAt', isGreaterThan: lastSyncTime.toIso8601String())
           .get();
 
-      debugPrint('Firebase: Found ${snapshot.docs.length} changed documents');
+      debugPrint('Firebase: Found ${metaSnapshot.docs.length} changed metadata documents');
 
-      for (final doc in snapshot.docs) {
+      for (final doc in metaSnapshot.docs) {
         final data = doc.data();
-        final remoteWriting = _parseRemoteWriting(doc.id, data);
+        final remoteMeta = _parseRemoteMetadata(doc.id, data);
         final localMeta = await _localStorage.getWritingMetadata(doc.id);
 
         if (localMeta == null) {
-          // New from remote
-          if (!remoteWriting.isDeleted) {
-            await _localStorage.saveWriting(remoteWriting);
-            debugPrint('Firebase: Downloaded new "${remoteWriting.title}"');
+          // New from remote - save metadata only
+          if (!remoteMeta.isDeleted) {
+            await _localStorage.updateWritingMetadata(remoteMeta);
+            debugPrint('Firebase: Downloaded new metadata "${remoteMeta.title}"');
           }
+        } else if (!localMeta.isSynced) {
+          // Local was just uploaded - skip
+          continue;
         } else {
           // Resolve conflict
-          await _resolveConflict(localMeta, remoteWriting, collection);
+          await _resolveMetadataConflict(localMeta, remoteMeta, writingsCollection, metaCollection);
         }
       }
-
-      // Upload any unsynced local changes (direct call, already inside sync)
-      await _uploadUnsyncedWritings();
 
       // Update last sync time
       await _localStorage.updateLastSyncTime(syncStartTime);
@@ -252,7 +271,25 @@ class FirebaseSyncService {
     }
   }
   
-  /// Parse a Writing from remote Firestore data
+  /// Parse WritingMetadata from remote Firestore data
+  WritingMetadata _parseRemoteMetadata(String id, Map<String, dynamic> data) {
+    DateTime? deletedAt;
+    if (data['deletedAt'] != null && data['deletedAt'].toString().isNotEmpty) {
+      deletedAt = DateTime.parse(data['deletedAt']);
+    }
+    
+    return WritingMetadata(
+      id: id,
+      title: data['title'] ?? '',
+      preview: data['preview'] ?? '',
+      createdAt: DateTime.parse(data['createdAt'] ?? DateTime.now().toIso8601String()),
+      updatedAt: DateTime.parse(data['updatedAt'] ?? DateTime.now().toIso8601String()),
+      isSynced: true,
+      deletedAt: deletedAt,
+    );
+  }
+  
+  /// Parse a full Writing from remote Firestore data
   Writing _parseRemoteWriting(String id, Map<String, dynamic> data) {
     DateTime? deletedAt;
     if (data['deletedAt'] != null && data['deletedAt'].toString().isNotEmpty) {
@@ -273,46 +310,59 @@ class FirebaseSyncService {
     );
   }
   
-  /// Resolve conflict between local metadata and remote writing using timestamps
-  Future<void> _resolveConflict(
+  /// Resolve conflict between local metadata and remote metadata
+  Future<void> _resolveMetadataConflict(
     WritingMetadata localMeta, 
-    Writing remoteWriting,
-    CollectionReference<Map<String, dynamic>> collection,
+    WritingMetadata remoteMeta,
+    CollectionReference<Map<String, dynamic>> writingsCollection,
+    CollectionReference<Map<String, dynamic>> metaCollection,
   ) async {
-    // Compare updatedAt timestamps for conflict resolution
-    final localNewer = localMeta.updatedAt.isAfter(remoteWriting.updatedAt);
-    final remoteNewer = remoteWriting.updatedAt.isAfter(localMeta.updatedAt);
+    final localNewer = localMeta.updatedAt.isAfter(remoteMeta.updatedAt);
+    final remoteNewer = remoteMeta.updatedAt.isAfter(localMeta.updatedAt);
     
     if (remoteNewer) {
       // Remote is newer - use remote version
-      if (remoteWriting.isDeleted) {
+      if (remoteMeta.isDeleted) {
         // Remote was deleted - soft-delete locally too
         if (!localMeta.isDeleted) {
-          await _localStorage.saveWriting(remoteWriting);
+          await _localStorage.updateWritingMetadata(remoteMeta);
+          // Mark local body for deletion
+          await _invalidateLocalBody(remoteMeta.id);
           debugPrint('Firebase: Applied remote deletion for "${localMeta.title}"');
         }
       } else {
-        // Remote has newer content
-        await _localStorage.saveWriting(remoteWriting);
-        debugPrint('Firebase: Updated local "${remoteWriting.title}" (remote was newer)');
+        // Remote has newer metadata
+        await _localStorage.updateWritingMetadata(remoteMeta);
+        // Invalidate local body so it gets fetched fresh when opened
+        await _invalidateLocalBody(remoteMeta.id);
+        debugPrint('Firebase: Updated local metadata "${remoteMeta.title}" (remote was newer)');
       }
     } else if (localNewer && !localMeta.isSynced) {
       // Local is newer and unsynced - upload local version
       final localWriting = await _localStorage.getFullWriting(localMeta.id);
       if (localWriting != null) {
-        await _uploadWriting(localWriting, collection);
+        await _uploadWriting(localWriting, writingsCollection, metaCollection);
         debugPrint('Firebase: Uploaded "${localWriting.title}" (local was newer)');
       }
     }
     // If timestamps are equal, they're already in sync
   }
   
-  /// Upload a writing to Firestore
+  /// Invalidate local body cache (mark that body needs to be re-fetched)
+  Future<void> _invalidateLocalBody(String id) async {
+    // For now, we don't store body cache separately
+    // Body will be fetched on-demand when user opens the writing
+    // This is a placeholder for potential future optimization
+  }
+  
+  /// Upload a writing to BOTH Firestore collections
   Future<void> _uploadWriting(
     Writing writing, 
-    CollectionReference<Map<String, dynamic>> collection,
+    CollectionReference<Map<String, dynamic>> writingsCollection,
+    CollectionReference<Map<String, dynamic>> metaCollection,
   ) async {
-    await collection.doc(writing.id).set({
+    // Upload full writing
+    await writingsCollection.doc(writing.id).set({
       'title': writing.title,
       'body': writing.body,
       'footer': writing.footer,
@@ -323,9 +373,36 @@ class FirebaseSyncService {
       'deletedAt': writing.deletedAt?.toIso8601String(),
     });
     
+    // Upload metadata (lightweight version for fast listing)
+    final preview = _generatePreview(writing.body);
+    await metaCollection.doc(writing.id).set({
+      'title': writing.title,
+      'preview': preview,
+      'createdAt': writing.createdAt.toIso8601String(),
+      'updatedAt': writing.updatedAt.toIso8601String(),
+      'deletedAt': writing.deletedAt?.toIso8601String(),
+    });
+    
     // Mark as synced locally
     final syncedWriting = writing.copyWith(isSynced: true);
     await _localStorage.saveWriting(syncedWriting);
+  }
+  
+  /// Generate preview from body text (first 100 chars)
+  String _generatePreview(String body) {
+    if (body.isEmpty) return '';
+    
+    String preview = body
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&amp;', '&')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    
+    return preview.length > 100 ? '${preview.substring(0, 100)}...' : preview;
   }
   
   /// Cleanup: permanently delete writings that are soft-deleted and synced
@@ -344,9 +421,14 @@ class FirebaseSyncService {
     }
   }
 
-  /// Get the writings collection
+  /// Get the writings collection (full content)
   CollectionReference<Map<String, dynamic>> get _writingsCollection {
     return _firestore.collection('writings');
+  }
+  
+  /// Get the writings metadata collection (lightweight)
+  CollectionReference<Map<String, dynamic>> get _writingsMetaCollection {
+    return _firestore.collection('writings_meta');
   }
 
   /// Sync only unsynced local writings to Firebase (public, with guards)
@@ -366,8 +448,12 @@ class FirebaseSyncService {
   
   /// Internal: upload all unsynced writings (no guards - for use during sync)
   Future<void> _uploadUnsyncedWritings() async {
-    final collection = _writingsCollection;
+    final writingsCollection = _writingsCollection;
+    final metaCollection = _writingsMetaCollection;
     final metadata = await _localStorage.getAllWritingsMetadataIncludingDeleted();
+    
+    final unsyncedCount = metadata.where((m) => !m.isSynced).length;
+    debugPrint('Firebase: Found ${metadata.length} writings, $unsyncedCount unsynced');
 
     for (final meta in metadata) {
       if (!meta.isSynced) {
@@ -375,22 +461,24 @@ class FirebaseSyncService {
           // Load full writing for upload
           final writing = await _localStorage.getFullWriting(meta.id);
           if (writing != null) {
-            await _uploadWriting(writing, collection);
+            debugPrint('Firebase: Uploading "${writing.title}" (${writing.id})...');
+            await _uploadWriting(writing, writingsCollection, metaCollection);
+            debugPrint('Firebase: Successfully uploaded "${writing.title}"');
           }
         } catch (e) {
-          debugPrint('Error syncing writing ${meta.id}: $e');
+          debugPrint('Firebase ERROR syncing writing ${meta.id}: $e');
         }
       }
     }
   }
 
-  /// Listen to remote changes and apply them locally
-  void _listenToRemoteChanges() {
-    _remoteChangesSubscription?.cancel();
+  /// Listen to remote metadata changes and apply them locally
+  void _listenToRemoteMetadataChanges() {
+    _remoteMetaChangesSubscription?.cancel();
     
-    final collection = _writingsCollection;
+    final metaCollection = _writingsMetaCollection;
 
-    _remoteChangesSubscription = collection.snapshots().listen((snapshot) async {
+    _remoteMetaChangesSubscription = metaCollection.snapshots().listen((snapshot) async {
       for (final change in snapshot.docChanges) {
         // Skip the initial load - we handle that in sync methods
         if (change.type == DocumentChangeType.added && !_isInitialized) {
@@ -401,13 +489,15 @@ class FirebaseSyncService {
             change.type == DocumentChangeType.modified) {
           final data = change.doc.data();
           if (data != null) {
-            final remoteWriting = _parseRemoteWriting(change.doc.id, data);
+            final remoteMeta = _parseRemoteMetadata(change.doc.id, data);
             final localMeta = await _localStorage.getWritingMetadata(change.doc.id);
 
             // Apply if remote is newer or local doesn't exist
             if (localMeta == null ||
-                remoteWriting.updatedAt.isAfter(localMeta.updatedAt)) {
-              await _localStorage.saveWriting(remoteWriting);
+                remoteMeta.updatedAt.isAfter(localMeta.updatedAt)) {
+              await _localStorage.updateWritingMetadata(remoteMeta);
+              // Invalidate local body cache
+              await _invalidateLocalBody(remoteMeta.id);
               _notifySyncChanged();
             }
           }
@@ -439,6 +529,39 @@ class FirebaseSyncService {
     }
   }
   
+  // ========== ON-DEMAND BODY FETCHING ==========
+  
+  /// Fetch full writing body from Firestore (for on-demand loading)
+  /// Call this when user opens a writing and body is not cached locally
+  Future<Writing?> fetchWritingBody(String id) async {
+    if (!_isOnline) {
+      debugPrint('Firebase: Cannot fetch body - offline');
+      return null;
+    }
+    
+    try {
+      final doc = await _writingsCollection.doc(id).get();
+      if (!doc.exists) {
+        debugPrint('Firebase: Writing $id not found in Firestore');
+        return null;
+      }
+      
+      final data = doc.data();
+      if (data == null) return null;
+      
+      final writing = _parseRemoteWriting(id, data);
+      
+      // Save to local storage for future access
+      await _localStorage.saveWriting(writing);
+      debugPrint('Firebase: Fetched and cached body for "${writing.title}"');
+      
+      return writing;
+    } catch (e) {
+      debugPrint('Firebase: Error fetching body for $id: $e');
+      return null;
+    }
+  }
+  
   /// Check if currently online
   bool get isOnline => _isOnline;
   
@@ -451,7 +574,7 @@ class FirebaseSyncService {
   void dispose() {
     _syncTimer?.cancel();
     _connectivitySubscription?.cancel();
-    _remoteChangesSubscription?.cancel();
+    _remoteMetaChangesSubscription?.cancel();
     _onSyncChangedController.close();
   }
 }

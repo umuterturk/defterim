@@ -1,0 +1,31 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow anonymous authenticated users to read/write their own writings
+    // Note: Currently using a global 'writings' collection for simplicity
+    // In production, you might want per-user collections
+    
+    // Full writings (contains body content)
+    match /writings/{writingId} {
+      // Allow read/write for authenticated users (including anonymous)
+      allow read, write: if request.auth != null;
+    }
+    
+    // Lightweight metadata for fast list loading
+    // Contains: title, preview, createdAt, updatedAt, deletedAt
+    match /writings_meta/{writingId} {
+      // Allow read/write for authenticated users (including anonymous)
+      allow read, write: if request.auth != null;
+    }
+    
+    // Per-user writings (more secure alternative for future)
+    match /users/{userId}/writings/{writingId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    match /users/{userId}/writings_meta/{writingId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

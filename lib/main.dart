@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -31,10 +32,37 @@ class _DefterimAppState extends State<DefterimApp> {
     await LocalStorageService.instance.initialize();
     
     try {
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
-      await FirebaseSyncService.instance.initialize();
+      // Check if Firebase is properly configured for this platform
+      final options = DefaultFirebaseOptions.currentPlatform;
+      final hasNoPlaceholders =
+          !options.apiKey.startsWith('YOUR_') && !options.appId.startsWith('YOUR_');
+
+      // Check if the appId matches the platform
+      // IMPORTANT: Check kIsWeb first, since defaultTargetPlatform returns the host OS even on web
+      final bool isPlatformAppIdMatch;
+      if (kIsWeb) {
+        isPlatformAppIdMatch = options.appId.contains(':web:');
+      } else {
+        isPlatformAppIdMatch = switch (defaultTargetPlatform) {
+          TargetPlatform.iOS || TargetPlatform.macOS => options.appId.contains(':ios:'),
+          TargetPlatform.android => options.appId.contains(':android:'),
+          TargetPlatform.windows || TargetPlatform.linux => options.appId.contains(':web:'),
+          _ => true,
+        };
+      }
+
+      final isConfigured = hasNoPlaceholders && isPlatformAppIdMatch;
+      final platformName = kIsWeb ? 'web' : defaultTargetPlatform.name;
+      
+      if (isConfigured) {
+        await Firebase.initializeApp(options: options);
+        await FirebaseSyncService.instance.initialize();
+      } else {
+        debugPrint(
+          'Firebase not configured (or mismatched appId) for $platformName. '
+          'Run: flutterfire configure',
+        );
+      }
     } catch (e) {
       debugPrint('Firebase initialization failed: $e');
     }

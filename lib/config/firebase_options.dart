@@ -67,21 +67,23 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'YOUR_IOS_API_KEY',
-    appId: 'YOUR_IOS_APP_ID',
-    messagingSenderId: 'YOUR_SENDER_ID',
-    projectId: 'YOUR_PROJECT_ID',
-    storageBucket: 'YOUR_PROJECT_ID.appspot.com',
-    iosBundleId: 'com.example.defterim',
+    // Values sourced from GoogleService-Info.plist (Apple platform config)
+    apiKey: 'AIzaSyCKFoOSLsVBs7k7bIaDgIQ37g-BK9S3tlo',
+    appId: '1:896028980362:ios:d2112c0f1dc1f281b5e973',
+    messagingSenderId: '896028980362',
+    projectId: 'defterim-482110',
+    storageBucket: 'defterim-482110.firebasestorage.app',
+    iosBundleId: 'com.defterim.app',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'YOUR_MACOS_API_KEY',
-    appId: 'YOUR_MACOS_APP_ID',
-    messagingSenderId: 'YOUR_SENDER_ID',
-    projectId: 'YOUR_PROJECT_ID',
-    storageBucket: 'YOUR_PROJECT_ID.appspot.com',
-    iosBundleId: 'com.example.defterim',
+    // Values sourced from GoogleService-Info.plist (Apple platform config)
+    apiKey: 'AIzaSyCKFoOSLsVBs7k7bIaDgIQ37g-BK9S3tlo',
+    appId: '1:896028980362:ios:d2112c0f1dc1f281b5e973',
+    messagingSenderId: '896028980362',
+    projectId: 'defterim-482110',
+    storageBucket: 'defterim-482110.firebasestorage.app',
+    iosBundleId: 'com.defterim.app',
   );
 
   // Windows uses web SDK - same config as web

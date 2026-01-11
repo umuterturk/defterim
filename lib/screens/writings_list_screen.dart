@@ -7,6 +7,13 @@ import '../services/firebase_sync_service.dart';
 import '../widgets/writing_card.dart';
 import 'editor_screen.dart';
 
+/// Sort options for writings list
+enum SortType {
+  alphabetic,   // By title (default: A-Z)
+  lastUpdated,  // By update date (default: newest first)
+  created,      // By creation date (default: newest first)
+}
+
 /// Home screen showing list of all writings
 /// 
 /// Optimization: Uses lightweight WritingMetadata for fast loading.
@@ -23,11 +30,16 @@ class _WritingsListScreenState extends State<WritingsListScreen> {
   final FirebaseSyncService _syncService = FirebaseSyncService.instance;
   final TextEditingController _searchController = TextEditingController();
   StreamSubscription<void>? _syncSubscription;
+  Timer? _debounceTimer;
   
   List<WritingMetadata> _writings = [];
   List<WritingMetadata> _filteredWritings = [];
   String _searchQuery = '';
   bool _isLoading = true;
+  
+  // Sorting state
+  SortType _sortType = SortType.created;  // Default: by creation time
+  bool _sortAscending = false;  // Default: descending for dates
 
   @override
   void initState() {
@@ -45,30 +57,75 @@ class _WritingsListScreenState extends State<WritingsListScreen> {
   
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _searchController.dispose();
     _syncSubscription?.cancel();
     super.dispose();
   }
   
   void _onSearchChanged() {
-    setState(() {
-      _searchQuery = _searchController.text;
-      _filterWritings();
+    // Debounce search to avoid excessive rebuilds on every keystroke
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        setState(() {
+          _searchQuery = _searchController.text;
+          _filterWritings();
+        });
+      }
     });
   }
   
   void _filterWritings() {
+    List<WritingMetadata> result;
+    
     if (_searchQuery.isEmpty) {
-      _filteredWritings = _writings;
+      result = List.from(_writings);
     } else {
       final query = _searchQuery.toLowerCase();
-      _filteredWritings = _writings.where((metadata) {
+      result = _writings.where((metadata) {
         // Search in title and preview (body preview from metadata)
         final title = metadata.title.toLowerCase();
         final preview = metadata.preview.toLowerCase();
         return title.contains(query) || preview.contains(query);
       }).toList();
     }
+    
+    // Apply sorting
+    result.sort((a, b) {
+      int comparison;
+      switch (_sortType) {
+        case SortType.alphabetic:
+          // Turkish-aware comparison using lowercase
+          final titleA = a.title.isEmpty ? 'başlıksız' : a.title.toLowerCase();
+          final titleB = b.title.isEmpty ? 'başlıksız' : b.title.toLowerCase();
+          comparison = titleA.compareTo(titleB);
+          break;
+        case SortType.lastUpdated:
+          comparison = a.updatedAt.compareTo(b.updatedAt);
+          break;
+        case SortType.created:
+          comparison = a.createdAt.compareTo(b.createdAt);
+          break;
+      }
+      return _sortAscending ? comparison : -comparison;
+    });
+    
+    _filteredWritings = result;
+  }
+  
+  void _onSortChanged(SortType type) {
+    setState(() {
+      if (_sortType == type) {
+        // Toggle direction if same sort type tapped
+        _sortAscending = !_sortAscending;
+      } else {
+        // New sort type - set default direction
+        _sortType = type;
+        _sortAscending = type == SortType.alphabetic; // A-Z for alpha, newest first for dates
+      }
+      _filterWritings();
+    });
   }
 
   Future<void> _loadWritings() async {
@@ -151,8 +208,8 @@ class _WritingsListScreenState extends State<WritingsListScreen> {
       ),
       body: Column(
         children: [
-          // Search bar
-          _buildSearchBar(),
+          // Search bar and sort options
+          _buildSearchAndSortBar(),
           
           // Writings list, empty state, or loading spinner
           Expanded(
@@ -203,48 +260,179 @@ class _WritingsListScreenState extends State<WritingsListScreen> {
     );
   }
 
-  Widget _buildSearchBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: TextField(
-        controller: _searchController,
-        style: const TextStyle(fontSize: 18),
-        decoration: InputDecoration(
-          hintText: 'Ara...',  // "Search..." in Turkish
-          hintStyle: TextStyle(
-            fontSize: 18,
-            color: Colors.grey[400],
+  Widget _buildSearchAndSortBar() {
+    return Column(
+      children: [
+        // Search bar
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: TextField(
+            controller: _searchController,
+            style: const TextStyle(fontSize: 18),
+            decoration: InputDecoration(
+              hintText: 'Ara...',  // "Search..." in Turkish
+              hintStyle: TextStyle(
+                fontSize: 18,
+                color: Colors.grey[400],
+              ),
+              prefixIcon: Icon(
+                Icons.search,
+                size: 28,
+                color: Colors.grey[600],
+              ),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: Icon(
+                        Icons.clear,
+                        size: 24,
+                        color: Colors.grey[600],
+                      ),
+                      onPressed: _clearSearch,
+                    )
+                  : null,
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey[300]!),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey[300]!),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFF4A7C59), width: 2),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            ),
           ),
-          prefixIcon: Icon(
-            Icons.search,
-            size: 28,
-            color: Colors.grey[600],
-          ),
-          suffixIcon: _searchQuery.isNotEmpty
-              ? IconButton(
-                  icon: Icon(
-                    Icons.clear,
-                    size: 24,
-                    color: Colors.grey[600],
+        ),
+        
+        // Sort buttons row with count
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Row(
+            children: [
+              Text(
+                'Sırala:',  // "Sort:" in Turkish
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildSortButton(
+                        label: 'Başlık',  // "Title"
+                        type: SortType.alphabetic,
+                        icon: Icons.sort_by_alpha,
+                      ),
+                      const SizedBox(width: 8),
+                      _buildSortButton(
+                        label: 'Güncelleme',  // "Update"
+                        type: SortType.lastUpdated,
+                        icon: Icons.update,
+                      ),
+                      const SizedBox(width: 8),
+                      _buildSortButton(
+                        label: 'Oluşturma',  // "Creation"
+                        type: SortType.created,
+                        icon: Icons.calendar_today,
+                      ),
+                    ],
                   ),
-                  onPressed: _clearSearch,
-                )
-              : null,
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey[300]!),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Writings count badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4A7C59).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: const Color(0xFF4A7C59).withOpacity(0.3),
+                  ),
+                ),
+                child: Text(
+                  _searchQuery.isNotEmpty
+                      ? '${_filteredWritings.length}/${_writings.length}'
+                      : '${_writings.length}',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF4A7C59),
+                  ),
+                ),
+              ),
+            ],
           ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey[300]!),
+        ),
+      ],
+    );
+  }
+  
+  Widget _buildSortButton({
+    required String label,
+    required SortType type,
+    required IconData icon,
+  }) {
+    final isSelected = _sortType == type;
+    final Color bgColor = isSelected ? const Color(0xFF4A7C59) : Colors.white;
+    final Color textColor = isSelected ? Colors.white : Colors.grey[700]!;
+    
+    // Determine arrow direction
+    IconData? arrowIcon;
+    if (isSelected) {
+      if (type == SortType.alphabetic) {
+        arrowIcon = _sortAscending ? Icons.arrow_upward : Icons.arrow_downward;
+      } else {
+        // For dates: ascending = oldest first, descending = newest first
+        arrowIcon = _sortAscending ? Icons.arrow_upward : Icons.arrow_downward;
+      }
+    }
+    
+    return Material(
+      color: bgColor,
+      borderRadius: BorderRadius.circular(20),
+      elevation: isSelected ? 2 : 0,
+      child: InkWell(
+        onTap: () => _onSortChanged(type),
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isSelected ? const Color(0xFF4A7C59) : Colors.grey[300]!,
+              width: 1.5,
+            ),
           ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF4A7C59), width: 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 20, color: textColor),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                  color: textColor,
+                ),
+              ),
+              if (arrowIcon != null) ...[
+                const SizedBox(width: 4),
+                Icon(arrowIcon, size: 18, color: textColor),
+              ],
+            ],
           ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         ),
       ),
     );
@@ -343,6 +531,7 @@ class _WritingsListScreenState extends State<WritingsListScreen> {
       itemBuilder: (context, index) {
         final metadata = displayWritings[index];
         return WritingCard(
+          key: ValueKey(metadata.id), // Helps Flutter efficiently diff list items
           metadata: metadata,
           onTap: () => _openWriting(metadata.id),
         );

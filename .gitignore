@@ -54,3 +54,7 @@ lib/config/google_config.dart
 # Environment files
 .env
 .env.local
+/out
+/out-old
+/node_modules
+/bin
