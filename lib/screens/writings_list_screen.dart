@@ -40,6 +40,9 @@ class _WritingsListScreenState extends State<WritingsListScreen> {
   // Sorting state
   SortType _sortType = SortType.created;  // Default: by creation time
   bool _sortAscending = false;  // Default: descending for dates
+  
+  // Type filter state: null = show all (Hepsi), otherwise show specific type
+  WritingType? _selectedTypeFilter;
 
   @override
   void initState() {
@@ -91,6 +94,13 @@ class _WritingsListScreenState extends State<WritingsListScreen> {
       }).toList();
     }
     
+    // Apply type filter (null = show all)
+    if (_selectedTypeFilter != null) {
+      result = result.where((metadata) {
+        return metadata.type == _selectedTypeFilter;
+      }).toList();
+    }
+    
     // Apply sorting
     result.sort((a, b) {
       int comparison;
@@ -126,6 +136,69 @@ class _WritingsListScreenState extends State<WritingsListScreen> {
       }
       _filterWritings();
     });
+  }
+  
+  void _onTypeFilterChanged(WritingType? type) {
+    setState(() {
+      _selectedTypeFilter = type;
+      _filterWritings();
+    });
+  }
+  
+  /// Get count of writings for a specific type (null = all)
+  int _getCountForType(WritingType? type) {
+    if (type == null) {
+      return _writings.length;
+    }
+    return _writings.where((w) => w.type == type).length;
+  }
+  
+  Widget _buildTypeFilterButton({
+    required WritingType? type,  // null = "Hepsi" (show all)
+    required String label,
+    required IconData icon,
+    required Color color,
+  }) {
+    final isSelected = _selectedTypeFilter == type;
+    final count = _getCountForType(type);
+    
+    return Material(
+      color: isSelected ? color.withOpacity(0.15) : Colors.transparent,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: () => _onTypeFilterChanged(type),
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isSelected ? color : Colors.grey[400]!,
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: isSelected ? color : Colors.grey[500],
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '$label ($count)',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                  color: isSelected ? color : Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _loadWritings() async {
@@ -195,13 +268,39 @@ class _WritingsListScreenState extends State<WritingsListScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F0), // Warm, paper-like background
       appBar: AppBar(
-        title: const Text(
-          'Defterim',  // "My Notebook" in Turkish
-          style: TextStyle(
-            fontSize: 28,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF2C2C2C),
-          ),
+        title: Row(
+          children: [
+            const Text(
+              'Defterim',  // "My Notebook" in Turkish
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF2C2C2C),
+              ),
+            ),
+            const SizedBox(width: 20),
+            // Type filter buttons (radio-style: only one selected at a time)
+            _buildTypeFilterButton(
+              type: null,  // null = show all
+              label: 'Hepsi',
+              icon: Icons.library_books,
+              color: const Color(0xFF5A6A7A), // Neutral gray-blue for all
+            ),
+            const SizedBox(width: 8),
+            _buildTypeFilterButton(
+              type: WritingType.siir,
+              label: 'Şiirler',
+              icon: Icons.auto_stories,
+              color: const Color(0xFF7B5EA7), // Purple for poems
+            ),
+            const SizedBox(width: 8),
+            _buildTypeFilterButton(
+              type: WritingType.yazi,
+              label: 'Yazılar',
+              icon: Icons.article,
+              color: const Color(0xFF4A7C59), // Green for prose
+            ),
+          ],
         ),
         backgroundColor: const Color(0xFFF5F5F0),
         elevation: 0,
