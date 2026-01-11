@@ -1,22 +1,17 @@
-name: Release
+name: Deploy to GitHub Pages
 
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version tag (e.g., v1.0.0)'
-        required: true
-        default: 'v0.1.0'
 
 env:
   FLUTTER_VERSION: '3.24.0'
 
 # Sets permissions of the GITHUB_TOKEN for GitHub Pages deployment
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
@@ -26,36 +21,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Build Windows
-  build-windows:
-    name: Build Windows
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: 'stable'
-          cache: true
-      
-      - name: Get dependencies
-        run: flutter pub get
-      
-      - name: Build Windows
-        run: flutter build windows --release
-      
-      - name: Create ZIP archive
-        run: |
-          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath build\windows\Defterim-windows.zip
-      
-      - name: Upload Windows build
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-zip
-          path: build/windows/Defterim-windows.zip
-
   # Build Web
   build-web:
     name: Build Web
@@ -76,17 +41,6 @@ jobs:
       - name: Build Web
         run: flutter build web --release --base-href "/defterim/"
       
-      - name: Create ZIP archive for release
-        run: |
-          cd build/web
-          zip -r ../Defterim-web.zip *
-      
-      - name: Upload Web build for release
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-zip
-          path: build/Defterim-web.zip
-      
       - name: Upload Web build for Pages
         uses: actions/upload-pages-artifact@v3
         with:
@@ -104,42 +58,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
-  # Create GitHub Release
-  create-release:
-    name: Create Release
-    needs: [build-windows, build-web]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-      
-      - name: Display structure of downloaded files
-        run: ls -R artifacts
-      
-      - name: Get version
-        id: get_version
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          fi
-      
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ steps.get_version.outputs.VERSION }}
-          name: Defterim ${{ steps.get_version.outputs.VERSION }}
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-          files: |
-            artifacts/windows-zip/Defterim-windows.zip
-            artifacts/web-zip/Defterim-web.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
