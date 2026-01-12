@@ -9,6 +9,16 @@ import {
   metadataFromWriting,
   isDeleted,
 } from '../types/writing';
+import type {
+  Book,
+  BookMetadata,
+  BookIndex,
+} from '../types/book';
+import {
+  BOOK_INDEX_VERSION,
+  metadataFromBook,
+  isBookDeleted,
+} from '../types/book';
 
 // IndexedDB schema
 interface DefterimDB extends DBSchema {
@@ -21,17 +31,45 @@ interface DefterimDB extends DBSchema {
     key: string;
     value: MetadataIndex;
   };
+  books: {
+    key: string;
+    value: Book;
+    indexes: { 'by-updated': string };
+  };
+  bookMetadata: {
+    key: string;
+    value: BookIndex;
+  };
 }
 
 const DB_NAME = 'defterim-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Incremented for books support
 const METADATA_KEY = 'index';
+const BOOK_METADATA_KEY = 'book-index';
 
 class LocalStorageService {
   private db: IDBPDatabase<DefterimDB> | null = null;
   private metadataCache: MetadataIndex | null = null;
+  private bookMetadataCache: BookIndex | null = null;
+  private initPromise: Promise<void> | null = null;
 
   async initialize(): Promise<void> {
+    // If already initialized, return immediately
+    if (this.db) {
+      return;
+    }
+
+    // If initialization is in progress, wait for it
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+
+    // Start initialization
+    this.initPromise = this._doInitialize();
+    return this.initPromise;
+  }
+
+  private async _doInitialize(): Promise<void> {
     this.db = await openDB<DefterimDB>(DB_NAME, DB_VERSION, {
       upgrade(db) {
         // Create writings object store
@@ -43,6 +81,17 @@ class LocalStorageService {
         // Create metadata object store
         if (!db.objectStoreNames.contains('metadata')) {
           db.createObjectStore('metadata');
+        }
+
+        // Create books object store
+        if (!db.objectStoreNames.contains('books')) {
+          const booksStore = db.createObjectStore('books', { keyPath: 'id' });
+          booksStore.createIndex('by-updated', 'updatedAt');
+        }
+
+        // Create book metadata object store
+        if (!db.objectStoreNames.contains('bookMetadata')) {
+          db.createObjectStore('bookMetadata');
         }
       },
     });
@@ -262,13 +311,188 @@ class LocalStorageService {
 
   async clearAll(): Promise<void> {
     this.metadataCache = null;
+    this.bookMetadataCache = null;
 
     if (!this.db) return;
     
-    const tx = this.db.transaction(['writings', 'metadata'], 'readwrite');
+    const tx = this.db.transaction(['writings', 'metadata', 'books', 'bookMetadata'], 'readwrite');
     await tx.objectStore('writings').clear();
     await tx.objectStore('metadata').clear();
+    await tx.objectStore('books').clear();
+    await tx.objectStore('bookMetadata').clear();
     await tx.done;
+  }
+
+  // ========== BOOK METADATA INDEX OPERATIONS ==========
+
+  async loadBookMetadataIndex(): Promise<BookIndex> {
+    if (this.bookMetadataCache) {
+      return this.bookMetadataCache;
+    }
+
+    if (!this.db) {
+      return { version: BOOK_INDEX_VERSION, books: [] };
+    }
+
+    try {
+      const index = await this.db.get('bookMetadata', BOOK_METADATA_KEY);
+      
+      if (!index) {
+        // First run or migration: build index from existing books
+        console.log('Book metadata index not found, building from existing books...');
+        const rebuilt = await this.rebuildBookMetadataIndex();
+        this.bookMetadataCache = rebuilt;
+        return rebuilt;
+      }
+
+      // Check if metadata schema is outdated
+      if (index.version < BOOK_INDEX_VERSION) {
+        console.log(`Book metadata index version ${index.version} is outdated, rebuilding...`);
+        const rebuilt = await this.rebuildBookMetadataIndex();
+        this.bookMetadataCache = rebuilt;
+        return rebuilt;
+      }
+
+      this.bookMetadataCache = index;
+      console.log(`Loaded book metadata index: ${index.books.length} books`);
+      return index;
+    } catch (e) {
+      console.error('Error loading book metadata index, rebuilding:', e);
+      const rebuilt = await this.rebuildBookMetadataIndex();
+      this.bookMetadataCache = rebuilt;
+      return rebuilt;
+    }
+  }
+
+  async saveBookMetadataIndex(index: BookIndex): Promise<void> {
+    this.bookMetadataCache = index;
+
+    if (!this.db) return;
+    await this.db.put('bookMetadata', index, BOOK_METADATA_KEY);
+  }
+
+  async rebuildBookMetadataIndex(): Promise<BookIndex> {
+    if (!this.db) {
+      return { version: BOOK_INDEX_VERSION, books: [] };
+    }
+
+    const books = await this.db.getAll('books');
+    const metadataList = books.map(metadataFromBook);
+
+    const index: BookIndex = {
+      version: BOOK_INDEX_VERSION,
+      books: metadataList,
+    };
+
+    await this.saveBookMetadataIndex(index);
+    console.log(`Rebuilt book metadata index: ${metadataList.length} books`);
+    return index;
+  }
+
+  async updateBookLastSyncTime(syncTime: Date): Promise<void> {
+    const index = await this.loadBookMetadataIndex();
+    await this.saveBookMetadataIndex({
+      ...index,
+      lastSyncTime: syncTime.toISOString(),
+    });
+  }
+
+  async getBookLastSyncTime(): Promise<Date | null> {
+    const index = await this.loadBookMetadataIndex();
+    return index.lastSyncTime ? new Date(index.lastSyncTime) : null;
+  }
+
+  // ========== BOOK METADATA OPERATIONS (FAST) ==========
+
+  async getAllBooksMetadata(): Promise<BookMetadata[]> {
+    const index = await this.loadBookMetadataIndex();
+    const activeBooks = index.books.filter((b) => !isBookDeleted(b));
+    activeBooks.sort((a, b) => 
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+    return activeBooks;
+  }
+
+  async getAllBooksMetadataIncludingDeleted(): Promise<BookMetadata[]> {
+    const index = await this.loadBookMetadataIndex();
+    return index.books;
+  }
+
+  async getBookMetadata(id: string): Promise<BookMetadata | null> {
+    const index = await this.loadBookMetadataIndex();
+    return index.books.find((b) => b.id === id) ?? null;
+  }
+
+  async updateBookMetadata(metadata: BookMetadata): Promise<void> {
+    const index = await this.loadBookMetadataIndex();
+    const books = index.books.filter((b) => b.id !== metadata.id);
+    books.push(metadata);
+    await this.saveBookMetadataIndex({ ...index, books });
+  }
+
+  async removeBookMetadata(id: string): Promise<void> {
+    const index = await this.loadBookMetadataIndex();
+    const books = index.books.filter((b) => b.id !== id);
+    await this.saveBookMetadataIndex({ ...index, books });
+  }
+
+  // ========== FULL BOOK OPERATIONS ==========
+
+  async getBook(id: string): Promise<Book | null> {
+    if (!this.db) return null;
+    
+    const book = await this.db.get('books', id);
+    return book ?? null;
+  }
+
+  async saveBook(book: Book): Promise<void> {
+    if (!this.db) return;
+
+    // Save full book to IndexedDB
+    await this.db.put('books', book);
+
+    // Update metadata index
+    const metadata = metadataFromBook(book);
+    await this.updateBookMetadata(metadata);
+  }
+
+  async deleteBook(id: string): Promise<void> {
+    const book = await this.getBook(id);
+    if (!book) return;
+
+    // Soft-delete: mark with timestamp and set as unsynced
+    const deletedBook: Book = {
+      ...book,
+      deletedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      isSynced: false,
+    };
+
+    await this.saveBook(deletedBook);
+  }
+
+  async permanentlyDeleteBook(id: string): Promise<void> {
+    // Remove from metadata index
+    await this.removeBookMetadata(id);
+
+    // Remove from IndexedDB
+    if (this.db) {
+      await this.db.delete('books', id);
+    }
+  }
+
+  async getAllBooks(): Promise<Book[]> {
+    const allBooks = await this.getAllBooksIncludingDeleted();
+    const activeBooks = allBooks.filter((b) => !isBookDeleted(b));
+    activeBooks.sort((a, b) =>
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+    return activeBooks;
+  }
+
+  async getAllBooksIncludingDeleted(): Promise<Book[]> {
+    if (!this.db) return [];
+    return this.db.getAll('books');
   }
 }
 

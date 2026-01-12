@@ -1,0 +1,25 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Writings metadata collection
+    match /writings_meta/{writingId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Full writings collection
+    match /writings/{writingId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Books collection
+    match /books/{bookId} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}

@@ -13,15 +13,29 @@ import {
   CircularProgress,
   Chip,
   LinearProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
+  Divider,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
 import AutoStoriesIcon from '@mui/icons-material/AutoStories';
 import EditNoteIcon from '@mui/icons-material/EditNote';
 import BookOutlinedIcon from '@mui/icons-material/BookOutlined';
+import MenuBookIcon from '@mui/icons-material/MenuBook';
 import SearchOffIcon from '@mui/icons-material/SearchOff';
 import CloudSyncIcon from '@mui/icons-material/CloudSync';
+import CheckIcon from '@mui/icons-material/Check';
+import AddIcon from '@mui/icons-material/Add';
+import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import { useWritings } from '../contexts/WritingsContext';
+import { useBook } from '../contexts/BookContext';
 import { WritingCard } from '../components/WritingCard';
 import { TypeFilterChips } from '../components/TypeFilterChips';
 import { SortButtons, type SortType } from '../components/SortButtons';
@@ -86,6 +100,7 @@ const VirtualizedRow = memo<RowComponentProps<ListRowProps>>(({ index, style, wr
 export function WritingsListPage() {
   const navigate = useNavigate();
   const { state, createNewWriting, isAvailableOffline } = useWritings();
+  const { state: bookState, createNewBook, setActiveBook } = useBook();
   const isOnline = useOnlineStatus();
   const listRef = useListRef(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -98,6 +113,13 @@ export function WritingsListPage() {
   const [selectedType, setSelectedType] = useState<WritingType | null>(null);
   const [sortType, setSortType] = useState<SortType>('created');
   const [sortAscending, setSortAscending] = useState(false);
+
+  // Book creation dialog state
+  const [showBookDialog, setShowBookDialog] = useState(false);
+  const [bookTitle, setBookTitle] = useState('');
+
+  // Book menu state
+  const [bookMenuAnchor, setBookMenuAnchor] = useState<null | HTMLElement>(null);
 
   // Use deferred value for search - allows typing to be responsive
   const deferredSearch = useDeferredValue(searchQuery);
@@ -276,6 +298,51 @@ export function WritingsListPage() {
     setSearchQuery('');
   }, []);
 
+  // Book handlers
+  const handleOpenBookDialog = useCallback(() => {
+    setBookTitle('');
+    setShowBookDialog(true);
+  }, []);
+
+  const handleCloseBookDialog = useCallback(() => {
+    setShowBookDialog(false);
+    setBookTitle('');
+  }, []);
+
+  const handleCreateBook = useCallback(async () => {
+    if (!bookTitle.trim()) return;
+    const book = await createNewBook(bookTitle.trim());
+    setShowBookDialog(false);
+    setBookTitle('');
+    navigate(`/book/${book.id}`);
+  }, [bookTitle, createNewBook, navigate]);
+
+  const handleNavigateToBook = useCallback(() => {
+    if (bookState.activeBook) {
+      navigate(`/book/${bookState.activeBook.id}`);
+    }
+  }, [bookState.activeBook, navigate]);
+
+  // Book menu handlers
+  const handleOpenBookMenu = useCallback((event: React.MouseEvent<HTMLElement>) => {
+    setBookMenuAnchor(event.currentTarget);
+  }, []);
+
+  const handleCloseBookMenu = useCallback(() => {
+    setBookMenuAnchor(null);
+  }, []);
+
+  const handleSelectBook = useCallback(async (bookId: string) => {
+    await setActiveBook(bookId);
+    setBookMenuAnchor(null);
+  }, [setActiveBook]);
+
+  const handleCreateNewBookFromMenu = useCallback(() => {
+    setBookMenuAnchor(null);
+    setBookTitle('');
+    setShowBookDialog(true);
+  }, []);
+
   // Memoize row props to prevent unnecessary VirtualizedRow re-renders
   const rowProps = useMemo(() => ({
     writings: filteredWritings,
@@ -368,8 +435,130 @@ export function WritingsListPage() {
               writings={state.writings}
             />
             
-            {/* New writing buttons */}
+            {/* Book and new writing buttons */}
             <Stack direction="row" spacing={1} sx={{ ml: 'auto' }}>
+              {/* Book button with dropdown */}
+              {bookState.books.length > 0 || bookState.activeBook ? (
+                <>
+                  <Button
+                    variant="outlined"
+                    onClick={handleOpenBookMenu}
+                    startIcon={<MenuBookIcon />}
+                    endIcon={<ArrowDropDownIcon />}
+                    sx={{
+                      borderColor: bookState.activeBook ? '#7B5EA7' : '#999',
+                      color: bookState.activeBook ? '#7B5EA7' : '#666',
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      borderRadius: '20px',
+                      px: 2,
+                      '&:hover': { 
+                        borderColor: '#7B5EA7',
+                        color: '#7B5EA7',
+                        bgcolor: 'rgba(123, 94, 167, 0.08)',
+                      },
+                    }}
+                  >
+                    {bookState.activeBook ? (
+                      <>
+                        {bookState.activeBook.title}
+                        <Chip
+                          label={bookState.activeBook.writingIds.length}
+                          size="small"
+                          sx={{
+                            ml: 1,
+                            height: 20,
+                            minWidth: 20,
+                            bgcolor: '#7B5EA7',
+                            color: 'white',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                          }}
+                        />
+                      </>
+                    ) : (
+                      'Kitap Seç'
+                    )}
+                  </Button>
+                  <Menu
+                    anchorEl={bookMenuAnchor}
+                    open={Boolean(bookMenuAnchor)}
+                    onClose={handleCloseBookMenu}
+                    PaperProps={{
+                      sx: {
+                        borderRadius: '12px',
+                        minWidth: 200,
+                        mt: 1,
+                      },
+                    }}
+                  >
+                    {/* Edit current book option */}
+                    {bookState.activeBook && (
+                      <MenuItem onClick={handleNavigateToBook}>
+                        <ListItemIcon>
+                          <MenuBookIcon fontSize="small" sx={{ color: '#7B5EA7' }} />
+                        </ListItemIcon>
+                        <ListItemText primary="Kitabı Düzenle" />
+                      </MenuItem>
+                    )}
+                    {bookState.activeBook && bookState.books.length > 0 && <Divider />}
+                    
+                    {/* List of books */}
+                    {bookState.books
+                      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                      .map((book) => (
+                        <MenuItem
+                          key={book.id}
+                          onClick={() => handleSelectBook(book.id)}
+                          selected={bookState.activeBook?.id === book.id}
+                        >
+                          <ListItemIcon>
+                            {bookState.activeBook?.id === book.id ? (
+                              <CheckIcon fontSize="small" sx={{ color: '#7B5EA7' }} />
+                            ) : (
+                              <Box sx={{ width: 20 }} />
+                            )}
+                          </ListItemIcon>
+                          <ListItemText 
+                            primary={book.title} 
+                            secondary={`${book.writingCount} yazı`}
+                          />
+                        </MenuItem>
+                      ))}
+                    
+                    <Divider />
+                    
+                    {/* Create new book option */}
+                    <MenuItem onClick={handleCreateNewBookFromMenu}>
+                      <ListItemIcon>
+                        <AddIcon fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText primary="Yeni Kitap Oluştur" />
+                    </MenuItem>
+                  </Menu>
+                </>
+              ) : (
+                <Button
+                  variant="outlined"
+                  onClick={handleOpenBookDialog}
+                  startIcon={<MenuBookIcon />}
+                  sx={{
+                    borderColor: '#999',
+                    color: '#666',
+                    fontWeight: 600,
+                    textTransform: 'none',
+                    borderRadius: '20px',
+                    px: 2,
+                    '&:hover': { 
+                      borderColor: '#7B5EA7',
+                      color: '#7B5EA7',
+                      bgcolor: 'rgba(123, 94, 167, 0.08)',
+                    },
+                  }}
+                >
+                  Kitap Oluştur
+                </Button>
+              )}
               <Button
                 variant="contained"
                 onClick={() => handleCreateWriting('siir')}
@@ -527,6 +716,56 @@ export function WritingsListPage() {
 
       {/* Offline indicator - short message for list page */}
       <OfflineIndicator />
+
+      {/* Create Book Dialog */}
+      <Dialog
+        open={showBookDialog}
+        onClose={handleCloseBookDialog}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: '16px' } }}
+      >
+        <DialogTitle sx={{ fontWeight: 600, fontSize: '24px' }}>
+          Yeni Kitap Oluştur
+        </DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            label="Kitap Adı"
+            placeholder="Kitabınıza bir isim verin..."
+            value={bookTitle}
+            onChange={(e) => setBookTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && bookTitle.trim()) {
+                handleCreateBook();
+              }
+            }}
+            sx={{ mt: 1 }}
+          />
+          <Typography variant="body2" sx={{ mt: 2, color: '#666' }}>
+            Kitap oluşturduktan sonra yazılarınızı kitaba ekleyebilir, sıralayabilir ve PDF olarak indirebilirsiniz.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={handleCloseBookDialog} sx={{ fontSize: '16px' }}>
+            İptal
+          </Button>
+          <Button
+            onClick={handleCreateBook}
+            variant="contained"
+            disabled={!bookTitle.trim()}
+            sx={{
+              bgcolor: '#7B5EA7',
+              fontWeight: 600,
+              fontSize: '16px',
+              '&:hover': { bgcolor: '#6b4e97' },
+            }}
+          >
+            Oluştur
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

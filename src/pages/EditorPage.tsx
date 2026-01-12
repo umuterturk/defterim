@@ -21,6 +21,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CloudOffIcon from '@mui/icons-material/CloudOff';
 import { useWritings } from '../contexts/WritingsContext';
 import { WritingTypeSelector } from '../components/WritingTypeSelector';
+import { BookToggleButton } from '../components/BookToggleButton';
 import { OfflineIndicator } from '../components/OfflineIndicator';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import type { Writing, WritingType } from '../types/writing';
@@ -439,6 +440,9 @@ export function EditorPage() {
         />
 
         <Box sx={{ flex: 1 }} />
+
+        {/* Book toggle button - only shows when there's an active book */}
+        <BookToggleButton writingId={writing.id} size="medium" />
 
         {/* Delete button */}
         <IconButton onClick={handleShowDeleteDialog} sx={{ color: '#666' }}>

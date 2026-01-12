@@ -14,6 +14,7 @@ import NotesIcon from '@mui/icons-material/Notes';
 import CloudOffOutlinedIcon from '@mui/icons-material/CloudOffOutlined';
 import type { WritingMetadata, WritingType } from '../types/writing';
 import { writingTypeDisplayName } from '../types/writing';
+import { BookToggleButton } from './BookToggleButton';
 
 interface WritingCardProps {
   metadata: WritingMetadata;
@@ -123,6 +124,8 @@ function WritingCardComponent({ metadata, onTap, isAvailableOffline = true, isOn
                 >
                   {displayTitle}
                 </Typography>
+                {/* Book toggle button - only shows when there's an active book */}
+                <BookToggleButton writingId={metadata.id} size="small" />
                 {isUnavailable && (
                   <Tooltip title="İnternete bağlı değilken kullanılamıyor" arrow>
                     <CloudOffOutlinedIcon 

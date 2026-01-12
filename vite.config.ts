@@ -43,6 +43,8 @@ export default defineConfig({
       workbox: {
         // Cache all static assets
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        // Increase file size limit for PDF library bundle
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MB
         // Runtime caching strategies
         runtimeCaching: [
           {

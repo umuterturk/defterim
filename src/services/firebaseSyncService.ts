@@ -21,6 +21,7 @@ import {
   generatePreview,
   isDeleted,
 } from '../types/writing';
+import type { Book } from '../types/book';
 
 type SyncCallback = () => void;
 type LoadingCallback = (isLoading: boolean, progress?: number) => void;
@@ -28,6 +29,7 @@ type LoadingCallback = (isLoading: boolean, progress?: number) => void;
 class FirebaseSyncService {
   private syncTimer: ReturnType<typeof setInterval> | null = null;
   private remoteListener: Unsubscribe | null = null;
+  private bookRemoteListener: Unsubscribe | null = null;
   private authListener: Unsubscribe | null = null;
   
   private isSyncing = false;
@@ -36,6 +38,7 @@ class FirebaseSyncService {
   private isFirstSync = true;
   
   private syncCallbacks: Set<SyncCallback> = new Set();
+  private bookSyncCallbacks: Set<SyncCallback> = new Set();
   private loadingCallbacks: Set<LoadingCallback> = new Set();
 
   constructor() {
@@ -89,11 +92,16 @@ class FirebaseSyncService {
       this.syncTimer = setInterval(() => {
         if (this.isOnline) {
           this.syncUnsyncedToCloud();
+          this.syncBooksToCloud();
         }
       }, 30000);
 
       // Listen to remote metadata changes
       this.listenToRemoteMetadataChanges();
+
+      // Sync books from Firestore (download + upload)
+      await this.performFullBooksSync();
+      this.listenToRemoteBookChanges();
 
       this.isInitialized = true;
       this.notifyLoadingChanged(false);
@@ -367,6 +375,164 @@ class FirebaseSyncService {
     }
   }
 
+  // ========== BOOK SYNC METHODS ==========
+
+  async performFullBooksSync(): Promise<void> {
+    if (!this.isOnline) return;
+
+    try {
+      const booksCollection = collection(db, 'books');
+
+      // Get all local books
+      const localBooks = await localStorageService.getAllBooksIncludingDeleted();
+      const localMap = new Map(localBooks.map((b) => [b.id, b]));
+
+      // Upload any unsynced local books first
+      const unsyncedBooks = localBooks.filter((b) => !b.isSynced);
+      if (unsyncedBooks.length > 0) {
+        console.log(`Firebase: Uploading ${unsyncedBooks.length} unsynced local books first...`);
+        for (const book of unsyncedBooks) {
+          await this.uploadBook(book);
+          console.log(`Firebase: Uploaded unsynced book "${book.title}"`);
+        }
+      }
+
+      // Download ALL books from Firestore
+      const booksSnapshot = await getDocs(booksCollection);
+      console.log(`Firebase: Downloaded ${booksSnapshot.docs.length} books from Firestore`);
+
+      let hasChanges = false;
+
+      for (const docSnap of booksSnapshot.docs) {
+        const data = docSnap.data();
+        const remoteBook = this.parseRemoteBook(docSnap.id, data);
+        const localBook = localMap.get(docSnap.id);
+
+        if (!localBook) {
+          // New book from remote - save it
+          if (!remoteBook.deletedAt) {
+            await localStorageService.saveBook(remoteBook);
+            console.log(`Firebase: Downloaded new book "${remoteBook.title}"`);
+            hasChanges = true;
+          }
+        } else if (!localBook.isSynced) {
+          // Local was just uploaded - skip
+          continue;
+        } else if (new Date(remoteBook.updatedAt) > new Date(localBook.updatedAt)) {
+          // Remote is newer - update local
+          await localStorageService.saveBook(remoteBook);
+          console.log(`Firebase: Updated book "${remoteBook.title}" from remote`);
+          hasChanges = true;
+        }
+      }
+
+      if (hasChanges) {
+        this.notifyBookSyncChanged();
+      }
+
+      console.log('Firebase: Books sync complete');
+    } catch (e) {
+      console.error('Error syncing books from Firestore:', e);
+    }
+  }
+
+  async syncBooksToCloud(): Promise<void> {
+    if (!this.isOnline || !this.isInitialized) return;
+
+    try {
+      const books = await localStorageService.getAllBooksIncludingDeleted();
+      const unsyncedBooks = books.filter((b) => !b.isSynced);
+
+      console.log(`Firebase: Found ${unsyncedBooks.length} unsynced books`);
+
+      for (const book of unsyncedBooks) {
+        try {
+          await this.uploadBook(book);
+          console.log(`Firebase: Uploaded book "${book.title}"`);
+        } catch (e) {
+          console.error(`Firebase ERROR syncing book ${book.id}:`, e);
+        }
+      }
+
+      if (unsyncedBooks.length > 0) {
+        this.notifyBookSyncChanged();
+      }
+    } catch (e) {
+      console.error('Error syncing books:', e);
+    }
+  }
+
+  private async uploadBook(book: Book): Promise<void> {
+    const booksCollection = collection(db, 'books');
+
+    await setDoc(doc(booksCollection, book.id), {
+      title: book.title,
+      writingIds: book.writingIds,
+      createdAt: book.createdAt,
+      updatedAt: book.updatedAt,
+      deletedAt: book.deletedAt ?? null,
+    });
+
+    // Mark as synced locally
+    const syncedBook: Book = { ...book, isSynced: true };
+    await localStorageService.saveBook(syncedBook);
+  }
+
+  private listenToRemoteBookChanges(): void {
+    if (this.bookRemoteListener) {
+      this.bookRemoteListener();
+    }
+
+    const booksCollection = collection(db, 'books');
+    let isInitialLoad = true;
+
+    this.bookRemoteListener = onSnapshot(booksCollection, async (snapshot) => {
+      // Skip initial snapshot
+      if (isInitialLoad) {
+        isInitialLoad = false;
+        return;
+      }
+
+      let hasChanges = false;
+
+      for (const change of snapshot.docChanges()) {
+        if (change.type === 'added' || change.type === 'modified') {
+          const data = change.doc.data();
+          const remoteBook = this.parseRemoteBook(change.doc.id, data);
+          const localBook = await localStorageService.getBook(change.doc.id);
+
+          // Apply if remote is newer or local doesn't exist
+          if (!localBook || new Date(remoteBook.updatedAt) > new Date(localBook.updatedAt)) {
+            await localStorageService.saveBook(remoteBook);
+            hasChanges = true;
+          }
+        } else if (change.type === 'removed') {
+          const localBook = await localStorageService.getBook(change.doc.id);
+          if (localBook && localBook.isSynced) {
+            await localStorageService.permanentlyDeleteBook(change.doc.id);
+            hasChanges = true;
+          }
+        }
+      }
+
+      if (hasChanges) {
+        this.notifyBookSyncChanged();
+      }
+    });
+  }
+
+  private parseRemoteBook(id: string, data: Record<string, unknown>): Book {
+    return {
+      id,
+      title: (data.title as string) ?? '',
+      writingIds: (data.writingIds as string[]) ?? [],
+      createdAt: (data.createdAt as string) ?? new Date().toISOString(),
+      updatedAt: (data.updatedAt as string) ?? new Date().toISOString(),
+      isSynced: true,
+      deletedAt: data.deletedAt ? (data.deletedAt as string) : undefined,
+    };
+  }
+
   // ========== ON-DEMAND BODY FETCHING ==========
 
   async fetchWritingBody(id: string): Promise<Writing | null> {
@@ -489,6 +655,11 @@ class FirebaseSyncService {
     return () => this.syncCallbacks.delete(callback);
   }
 
+  onBookSyncChanged(callback: SyncCallback): () => void {
+    this.bookSyncCallbacks.add(callback);
+    return () => this.bookSyncCallbacks.delete(callback);
+  }
+
   onLoadingChanged(callback: LoadingCallback): () => void {
     this.loadingCallbacks.add(callback);
     return () => this.loadingCallbacks.delete(callback);
@@ -496,6 +667,10 @@ class FirebaseSyncService {
 
   private notifySyncChanged(): void {
     this.syncCallbacks.forEach((callback) => callback());
+  }
+
+  private notifyBookSyncChanged(): void {
+    this.bookSyncCallbacks.forEach((callback) => callback());
   }
 
   private notifyLoadingChanged(isLoading: boolean, progress?: number): void {
@@ -521,6 +696,7 @@ class FirebaseSyncService {
   dispose(): void {
     if (this.syncTimer) clearInterval(this.syncTimer);
     if (this.remoteListener) this.remoteListener();
+    if (this.bookRemoteListener) this.bookRemoteListener();
     if (this.authListener) this.authListener();
   }
 }

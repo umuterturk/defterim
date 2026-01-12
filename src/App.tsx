@@ -1,8 +1,10 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { WritingsProvider } from './contexts/WritingsContext';
+import { BookProvider } from './contexts/BookContext';
 import { WritingsListPage } from './pages/WritingsListPage';
 import { EditorPage } from './pages/EditorPage';
+import { BookEditPage } from './pages/BookEditPage';
 
 // Create theme matching Flutter app colors
 const theme = createTheme({
@@ -90,12 +92,15 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <WritingsProvider>
-        <BrowserRouter basename={basename}>
-          <Routes>
-            <Route path="/" element={<WritingsListPage />} />
-            <Route path="/editor/:id" element={<EditorPage />} />
-          </Routes>
-        </BrowserRouter>
+        <BookProvider>
+          <BrowserRouter basename={basename}>
+            <Routes>
+              <Route path="/" element={<WritingsListPage />} />
+              <Route path="/editor/:id" element={<EditorPage />} />
+              <Route path="/book/:id" element={<BookEditPage />} />
+            </Routes>
+          </BrowserRouter>
+        </BookProvider>
       </WritingsProvider>
     </ThemeProvider>
   );
