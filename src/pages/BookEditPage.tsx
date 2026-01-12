@@ -267,8 +267,9 @@ export function BookEditPage() {
   }, [removeWritingFromBook]);
 
   const handleNavigateToWriting = useCallback((writingId: string) => {
-    navigate(`/editor/${writingId}`);
-  }, [navigate]);
+    // Pass the return path so EditorPage knows where to go back
+    navigate(`/editor/${writingId}`, { state: { returnTo: `/book/${id}` } });
+  }, [navigate, id]);
 
   const handleShowDeleteDialog = useCallback(() => {
     setShowDeleteDialog(true);

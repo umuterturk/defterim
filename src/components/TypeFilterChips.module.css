@@ -1,0 +1,61 @@
+/* TypeFilterChips Styles - Mobile First */
+
+.container {
+  display: flex;
+  gap: 0.375rem;
+  flex-wrap: nowrap;
+}
+
+.chip {
+  font-size: var(--font-size-xs);
+  height: auto;
+  padding: 0.25rem 0;
+  font-weight: 500;
+}
+
+.chipSelected {
+  font-weight: 700;
+  border-width: 2px;
+}
+
+.chipUnselected {
+  font-weight: 500;
+  border-width: 1.5px;
+}
+
+/* Show labels on mobile, hide counts */
+.label {
+  display: inline;
+}
+
+.count {
+  display: none;
+}
+
+/* Tablet and up - show counts too */
+@media (min-width: 600px) {
+  .container {
+    gap: 0.5rem;
+  }
+  
+  .chip {
+    font-size: var(--font-size-sm);
+    padding: 0.375rem 0;
+  }
+  
+  /* Show count on tablet and up */
+  .count {
+    display: inline;
+  }
+}
+
+/* Desktop */
+@media (min-width: 960px) {
+  .container {
+    gap: 0.75rem;
+  }
+  
+  .chip {
+    font-size: var(--font-size-base);
+  }
+}

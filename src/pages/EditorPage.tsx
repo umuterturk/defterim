@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
   TextField,
@@ -30,7 +30,11 @@ import { isValidForSave } from '../types/writing';
 export function EditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { getFullWriting, saveWriting, deleteWriting, isPendingWriting, discardPendingWriting } = useWritings();
+  
+  // Get return path from navigation state (if coming from book edit page)
+  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo || '/';
   const isOnline = useOnlineStatus();
 
   // State
@@ -259,7 +263,7 @@ export function EditorPage() {
     }
 
     if (!writing) {
-      navigate('/');
+      navigate(returnTo);
       return;
     }
 
@@ -267,7 +271,7 @@ export function EditorPage() {
     const isPending = isPendingWriting(writing.id);
 
     // Navigate immediately for better UX
-    navigate('/');
+    navigate(returnTo);
 
     // Handle in background based on validity and pending status
     if (isPending) {
@@ -290,7 +294,7 @@ export function EditorPage() {
         saveWriting(writing);
       }
     }
-  }, [writing, hasUnsavedChanges, navigate, deleteWriting, saveWriting, isPendingWriting, discardPendingWriting]);
+  }, [writing, hasUnsavedChanges, navigate, deleteWriting, saveWriting, isPendingWriting, discardPendingWriting, returnTo]);
 
   // Delete
   const handleDelete = useCallback(async () => {
@@ -302,11 +306,11 @@ export function EditorPage() {
     }
 
     // Navigate immediately
-    navigate('/');
+    navigate(returnTo);
     
     // Delete in background (deleteWriting handles pending writings automatically)
     deleteWriting(writing.id);
-  }, [writing, navigate, deleteWriting]);
+  }, [writing, navigate, deleteWriting, returnTo]);
 
   const handleShowDeleteDialog = useCallback(() => {
     setShowDeleteDialog(true);
@@ -360,7 +364,7 @@ export function EditorPage() {
           Daha önce açtığınız yazılar internetsiz de görüntülenebilir.
         </Alert>
         <Button
-          onClick={() => navigate('/')}
+          onClick={() => navigate(returnTo)}
           startIcon={<ArrowBackIcon />}
           variant="contained"
           sx={{
@@ -373,7 +377,7 @@ export function EditorPage() {
             '&:hover': { bgcolor: '#3d6b4a' },
           }}
         >
-          Listeye Dön
+          Geri Dön
         </Button>
       </Box>
     );
@@ -395,11 +399,11 @@ export function EditorPage() {
           Yazı bulunamadı
         </Typography>
         <Button
-          onClick={() => navigate('/')}
+          onClick={() => navigate(returnTo)}
           startIcon={<ArrowBackIcon />}
           sx={{ color: '#4A7C59' }}
         >
-          Listeye Dön
+          Geri Dön
         </Button>
       </Box>
     );

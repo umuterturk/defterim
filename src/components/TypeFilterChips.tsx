@@ -4,6 +4,7 @@ import LibraryBooksIcon from '@mui/icons-material/LibraryBooks';
 import AutoStoriesIcon from '@mui/icons-material/AutoStories';
 import ArticleIcon from '@mui/icons-material/Article';
 import type { WritingType, WritingMetadata } from '../types/writing';
+import styles from './TypeFilterChips.module.css';
 
 interface TypeFilterChipsProps {
   selectedType: WritingType | null;
@@ -55,23 +56,34 @@ const FilterChip = memo(function FilterChip({
     onTypeChange(option.type);
   }, [onTypeChange, option.type]);
 
+  const chipClassName = `${styles.chip} ${isSelected ? styles.chipSelected : styles.chipUnselected}`;
+
   return (
     <Chip
       icon={option.icon}
-      label={`${option.label} (${count})`}
+      label={
+        <>
+          <span className={styles.label}>{option.label}</span>
+          <span className={styles.count}> ({count})</span>
+        </>
+      }
       onClick={handleClick}
       variant={isSelected ? 'filled' : 'outlined'}
+      className={chipClassName}
       sx={{
         bgcolor: isSelected ? `${option.color}20` : 'transparent',
-        color: isSelected ? option.color : '#666',
-        borderColor: isSelected ? option.color : '#ccc',
-        borderWidth: isSelected ? 2 : 1,
-        fontWeight: isSelected ? 600 : 400,
+        color: `${option.color} !important`,
+        borderColor: isSelected ? option.color : `${option.color}80`,
+        borderWidth: isSelected ? 2 : 1.5,
+        '& .MuiChip-label': {
+          color: option.color,
+        },
         '& .MuiChip-icon': {
-          color: isSelected ? option.color : '#888',
+          color: `${option.color} !important`,
         },
         '&:hover': {
           bgcolor: `${option.color}15`,
+          borderColor: option.color,
         },
       }}
     />
@@ -100,7 +112,7 @@ export const TypeFilterChips = memo(function TypeFilterChips({
   }, [writings]);
 
   return (
-    <Stack direction="row" spacing={1}>
+    <Stack direction="row" className={styles.container}>
       {filterOptions.map((option) => (
         <FilterChip
           key={option.type ?? 'all'}

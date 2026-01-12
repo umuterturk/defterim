@@ -34,6 +34,7 @@ import CloudSyncIcon from '@mui/icons-material/CloudSync';
 import CheckIcon from '@mui/icons-material/Check';
 import AddIcon from '@mui/icons-material/Add';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import { useWritings } from '../contexts/WritingsContext';
 import { useBook } from '../contexts/BookContext';
 import { WritingCard } from '../components/WritingCard';
@@ -41,10 +42,13 @@ import { TypeFilterChips } from '../components/TypeFilterChips';
 import { SortButtons, type SortType } from '../components/SortButtons';
 import { OfflineIndicator } from '../components/OfflineIndicator';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
+import { useDebounce } from '../hooks/useDebounce';
 import type { WritingMetadata, WritingType } from '../types/writing';
+import { generateBookPdf } from '../components/BookPdfDocument';
+import styles from './WritingsListPage.module.css';
 
 // Card height including margin
-const CARD_HEIGHT = 140;
+const CARD_HEIGHT = 150;
 
 // Session storage key for scroll position
 const SCROLL_POSITION_KEY = 'writings-list-scroll-position';
@@ -70,7 +74,7 @@ const VirtualizedRow = memo<RowComponentProps<ListRowProps>>(({ index, style, wr
   const availableOffline = isAvailableOffline(writing.id);
   
   return (
-    <div style={{ ...style, paddingRight: 16, paddingLeft: 16 }}>
+    <div style={style} className={styles.listRow}>
       <WritingCard
         metadata={writing}
         onTap={handleTap}
@@ -120,9 +124,11 @@ export function WritingsListPage() {
 
   // Book menu state
   const [bookMenuAnchor, setBookMenuAnchor] = useState<null | HTMLElement>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
-  // Use deferred value for search - allows typing to be responsive
-  const deferredSearch = useDeferredValue(searchQuery);
+  // Debounce search query with 300ms delay
+  const deferredSearch = useDebounce(searchQuery, 300);
+  // Use deferred value for other filters - allows UI to be responsive
   const deferredType = useDeferredValue(selectedType);
   const deferredSortType = useDeferredValue(sortType);
   const deferredSortAscending = useDeferredValue(sortAscending);
@@ -176,14 +182,24 @@ export function WritingsListPage() {
       result = result.filter((w) => w.type === deferredType);
     }
 
-    // Filter by search query
+    // Filter and sort by search query - title matches first, then preview matches
     if (deferredSearch) {
       const query = deferredSearch.toLowerCase();
-      result = result.filter(
-        (w) =>
-          w.title.toLowerCase().includes(query) ||
-          w.preview.toLowerCase().includes(query)
-      );
+      const titleMatches: WritingMetadata[] = [];
+      const previewOnlyMatches: WritingMetadata[] = [];
+      
+      for (const w of result) {
+        const titleMatch = w.title.toLowerCase().includes(query);
+        const previewMatch = w.preview.toLowerCase().includes(query);
+        
+        if (titleMatch) {
+          titleMatches.push(w);
+        } else if (previewMatch) {
+          previewOnlyMatches.push(w);
+        }
+      }
+      
+      result = [...titleMatches, ...previewOnlyMatches];
     }
 
     return result;
@@ -247,7 +263,7 @@ export function WritingsListPage() {
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
         const viewportHeight = window.innerHeight;
-        setContainerHeight(viewportHeight - rect.top - 20); // 20px for padding
+        setContainerHeight(viewportHeight - rect.top - 5); // 5px gap at bottom
       }
     };
 
@@ -343,6 +359,36 @@ export function WritingsListPage() {
     setShowBookDialog(true);
   }, []);
 
+  // Get writing metadata for items in active book (for PDF generation)
+  const bookWritings = useMemo(() => {
+    if (!bookState.activeBook) return [];
+    
+    return bookState.activeBook.writingIds
+      .map((writingId) => state.writings.find((w) => w.id === writingId))
+      .filter((w): w is WritingMetadata => w !== undefined);
+  }, [bookState.activeBook, state.writings]);
+
+  const handlePrintBook = useCallback(async () => {
+    if (!bookState.activeBook) return;
+    
+    setBookMenuAnchor(null);
+    setIsGeneratingPdf(true);
+    try {
+      await generateBookPdf(
+        bookState.activeBook,
+        bookWritings,
+        state.writings,
+        'Mustafa Ertürk' // Author name - will be connected to user in the future
+      );
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      const errorMessage = error instanceof Error ? error.message : 'PDF oluşturulurken bir hata oluştu.';
+      alert(errorMessage);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  }, [bookState.activeBook, bookWritings, state.writings]);
+
   // Memoize row props to prevent unnecessary VirtualizedRow re-renders
   const rowProps = useMemo(() => ({
     writings: filteredWritings,
@@ -354,21 +400,12 @@ export function WritingsListPage() {
   // Loading state - initial load (wait until fully initialized)
   if (!state.isInitialized) {
     return (
-      <Box
-        sx={{
-          minHeight: '100vh',
-          bgcolor: '#F5F5F0',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <CircularProgress sx={{ color: '#4A7C59' }} size={56} />
-        <Typography variant="h5" sx={{ mt: 4, color: '#555', fontWeight: 500 }}>
+      <Box className={styles.loadingContainer}>
+        <CircularProgress sx={{ color: 'var(--color-primary)' }} size={56} />
+        <Typography className={styles.loadingTitle}>
           Yazılarınız yükleniyor...
         </Typography>
-        <Typography variant="body1" sx={{ mt: 1, color: '#888' }}>
+        <Typography className={styles.loadingSubtitle}>
           Lütfen bekleyin
         </Typography>
       </Box>
@@ -376,25 +413,17 @@ export function WritingsListPage() {
   }
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#F5F5F0', display: 'flex', flexDirection: 'column' }}>
+    <Box className={styles.pageContainer}>
       {/* Sync indicator */}
       {state.isSyncing && (
-        <Box sx={{ 
-          position: 'fixed', 
-          top: 0, 
-          left: 0, 
-          right: 0, 
-          zIndex: 1100,
-          bgcolor: 'rgba(74, 124, 89, 0.1)',
-          backdropFilter: 'blur(4px)',
-        }}>
+        <Box className={styles.syncIndicator}>
           <LinearProgress 
             variant={state.syncProgress > 0 ? 'determinate' : 'indeterminate'} 
             value={state.syncProgress}
             sx={{ 
               height: 3,
               bgcolor: 'transparent',
-              '& .MuiLinearProgress-bar': { bgcolor: '#4A7C59' },
+              '& .MuiLinearProgress-bar': { bgcolor: 'var(--color-primary)' },
             }} 
           />
           <Stack 
@@ -404,8 +433,8 @@ export function WritingsListPage() {
             spacing={1} 
             sx={{ py: 0.5 }}
           >
-            <CloudSyncIcon sx={{ fontSize: 16, color: '#4A7C59' }} />
-            <Typography variant="caption" sx={{ color: '#4A7C59', fontWeight: 500 }}>
+            <CloudSyncIcon sx={{ fontSize: 16, color: 'var(--color-primary)' }} />
+            <Typography className={styles.syncText}>
               Senkronize ediliyor... {state.syncProgress > 0 ? `%${state.syncProgress}` : ''}
             </Typography>
           </Stack>
@@ -413,30 +442,26 @@ export function WritingsListPage() {
       )}
 
       {/* Header */}
-      <Box sx={{ 
-        bgcolor: '#F5F5F0', 
-        borderBottom: '1px solid #e0e0e0', 
-        py: 2,
-        pt: state.isSyncing ? 6 : 2,
-        transition: 'padding-top 0.3s ease',
-      }}>
+      <Box className={`${styles.header} ${state.isSyncing ? styles.headerSyncing : ''}`}>
         <Container maxWidth="lg">
-          <Stack direction="row" alignItems="center" spacing={3} flexWrap="wrap" rowGap={1.5}>
+          <Box className={styles.headerContent}>
             <Typography
-              variant="h4"
               component="h1"
-              sx={{ fontWeight: 600, color: '#2C2C2C' }}
+              className={styles.pageTitle}
             >
               Defterim
             </Typography>
-            <TypeFilterChips
-              selectedType={selectedType}
-              onTypeChange={setSelectedType}
-              writings={state.writings}
-            />
+            
+            <Box className={styles.filterChipsWrapper}>
+              <TypeFilterChips
+                selectedType={selectedType}
+                onTypeChange={setSelectedType}
+                writings={state.writings}
+              />
+            </Box>
             
             {/* Book and new writing buttons */}
-            <Stack direction="row" spacing={1} sx={{ ml: 'auto' }}>
+            <Stack direction="row" spacing={1} className={styles.headerActions}>
               {/* Book button with dropdown */}
               {bookState.books.length > 0 || bookState.activeBook ? (
                 <>
@@ -445,19 +470,7 @@ export function WritingsListPage() {
                     onClick={handleOpenBookMenu}
                     startIcon={<MenuBookIcon />}
                     endIcon={<ArrowDropDownIcon />}
-                    sx={{
-                      borderColor: bookState.activeBook ? '#7B5EA7' : '#999',
-                      color: bookState.activeBook ? '#7B5EA7' : '#666',
-                      fontWeight: 600,
-                      textTransform: 'none',
-                      borderRadius: '20px',
-                      px: 2,
-                      '&:hover': { 
-                        borderColor: '#7B5EA7',
-                        color: '#7B5EA7',
-                        bgcolor: 'rgba(123, 94, 167, 0.08)',
-                      },
-                    }}
+                    className={`${styles.actionButton} ${styles.bookButton} ${bookState.activeBook ? styles.bookButtonActive : ''}`}
                   >
                     {bookState.activeBook ? (
                       <>
@@ -469,9 +482,9 @@ export function WritingsListPage() {
                             ml: 1,
                             height: 20,
                             minWidth: 20,
-                            bgcolor: '#7B5EA7',
+                            bgcolor: 'var(--color-secondary)',
                             color: 'white',
-                            fontSize: '0.75rem',
+                            fontSize: 'var(--font-size-xs)',
                             fontWeight: 600,
                           }}
                         />
@@ -486,7 +499,7 @@ export function WritingsListPage() {
                     onClose={handleCloseBookMenu}
                     PaperProps={{
                       sx: {
-                        borderRadius: '12px',
+                        borderRadius: 'var(--radius-md)',
                         minWidth: 200,
                         mt: 1,
                       },
@@ -496,9 +509,21 @@ export function WritingsListPage() {
                     {bookState.activeBook && (
                       <MenuItem onClick={handleNavigateToBook}>
                         <ListItemIcon>
-                          <MenuBookIcon fontSize="small" sx={{ color: '#7B5EA7' }} />
+                          <MenuBookIcon fontSize="small" sx={{ color: 'var(--color-secondary)' }} />
                         </ListItemIcon>
                         <ListItemText primary="Kitabı Düzenle" />
+                      </MenuItem>
+                    )}
+                    {/* Print current book option */}
+                    {bookState.activeBook && (
+                      <MenuItem 
+                        onClick={handlePrintBook}
+                        disabled={isGeneratingPdf || bookWritings.length === 0}
+                      >
+                        <ListItemIcon>
+                          <PictureAsPdfIcon fontSize="small" sx={{ color: 'var(--color-secondary)' }} />
+                        </ListItemIcon>
+                        <ListItemText primary={isGeneratingPdf ? "PDF Oluşturuluyor..." : "Kitabı Yazdır"} />
                       </MenuItem>
                     )}
                     {bookState.activeBook && bookState.books.length > 0 && <Divider />}
@@ -514,7 +539,7 @@ export function WritingsListPage() {
                         >
                           <ListItemIcon>
                             {bookState.activeBook?.id === book.id ? (
-                              <CheckIcon fontSize="small" sx={{ color: '#7B5EA7' }} />
+                              <CheckIcon fontSize="small" sx={{ color: 'var(--color-secondary)' }} />
                             ) : (
                               <Box sx={{ width: 20 }} />
                             )}
@@ -542,62 +567,44 @@ export function WritingsListPage() {
                   variant="outlined"
                   onClick={handleOpenBookDialog}
                   startIcon={<MenuBookIcon />}
-                  sx={{
-                    borderColor: '#999',
-                    color: '#666',
-                    fontWeight: 600,
-                    textTransform: 'none',
-                    borderRadius: '20px',
-                    px: 2,
-                    '&:hover': { 
-                      borderColor: '#7B5EA7',
-                      color: '#7B5EA7',
-                      bgcolor: 'rgba(123, 94, 167, 0.08)',
-                    },
-                  }}
+                  className={`${styles.actionButton} ${styles.bookButton}`}
                 >
-                  Kitap Oluştur
+                  <span className={styles.buttonText}>Oluştur</span>
                 </Button>
               )}
               <Button
                 variant="contained"
                 onClick={() => handleCreateWriting('siir')}
                 startIcon={<AutoStoriesIcon />}
+                className={styles.actionButton}
                 sx={{
-                  bgcolor: '#7B5EA7',
+                  bgcolor: 'var(--color-secondary)',
                   color: 'white',
-                  fontWeight: 600,
-                  textTransform: 'none',
-                  borderRadius: '20px',
-                  px: 2,
-                  '&:hover': { bgcolor: '#6b4e97' },
+                  '&:hover': { bgcolor: 'var(--color-secondary-hover)' },
                 }}
               >
-                Yeni Şiir
+                <span className={styles.buttonText}>Yeni Şiir</span>
               </Button>
               <Button
                 variant="contained"
                 onClick={() => handleCreateWriting('yazi')}
                 startIcon={<EditNoteIcon />}
+                className={styles.actionButton}
                 sx={{
-                  bgcolor: '#4A7C59',
+                  bgcolor: 'var(--color-primary)',
                   color: 'white',
-                  fontWeight: 600,
-                  textTransform: 'none',
-                  borderRadius: '20px',
-                  px: 2,
-                  '&:hover': { bgcolor: '#3d6b4a' },
+                  '&:hover': { bgcolor: 'var(--color-primary-hover)' },
                 }}
               >
-                Yeni Yazı
+                <span className={styles.buttonText}>Yeni Yazı</span>
               </Button>
             </Stack>
-          </Stack>
+          </Box>
         </Container>
       </Box>
 
       {/* Search and Sort */}
-      <Container maxWidth="lg" sx={{ py: 2, flexShrink: 0 }}>
+      <Container maxWidth="lg" className={styles.searchSortContainer}>
         {/* Search */}
         <TextField
           fullWidth
@@ -605,26 +612,30 @@ export function WritingsListPage() {
           value={searchQuery}
           onChange={handleSearchChange}
           size="small"
+          className={styles.searchField}
           sx={{
-            mb: 2,
             '& .MuiOutlinedInput-root': {
               bgcolor: 'white',
-              borderRadius: '12px',
-              '& fieldset': { borderColor: '#ddd' },
+              borderRadius: 'var(--radius-sm)',
+              height: { xs: 36, sm: 40 },
+              '& fieldset': { borderColor: 'var(--color-border-light)' },
               '&:hover fieldset': { borderColor: '#bbb' },
-              '&.Mui-focused fieldset': { borderColor: '#4A7C59', borderWidth: 2 },
+              '&.Mui-focused fieldset': { borderColor: 'var(--color-primary)', borderWidth: 2 },
+            },
+            '& .MuiOutlinedInput-input': {
+              py: { xs: 0.75, sm: 1 },
             },
           }}
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
-                <SearchIcon sx={{ color: '#666' }} />
+                <SearchIcon sx={{ color: 'var(--color-text-secondary)' }} />
               </InputAdornment>
             ),
             endAdornment: (
               <InputAdornment position="end">
                 {isSearching && (
-                  <CircularProgress size={18} sx={{ color: '#4A7C59', mr: 1 }} />
+                  <CircularProgress size={18} sx={{ color: 'var(--color-primary)', mr: 1 }} />
                 )}
                 {searchQuery && (
                   <IconButton size="small" onClick={handleClearSearch}>
@@ -637,12 +648,14 @@ export function WritingsListPage() {
         />
 
         {/* Sort and count */}
-        <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={2}>
-          <SortButtons
-            sortType={sortType}
-            sortAscending={sortAscending}
-            onSortChange={handleSortChange}
-          />
+        <Box className={styles.sortRow}>
+          <Box className={styles.sortButtonsWrapper}>
+            <SortButtons
+              sortType={sortType}
+              sortAscending={sortAscending}
+              onSortChange={handleSortChange}
+            />
+          </Box>
           <Chip
             label={
               deferredSearch || deferredType
@@ -650,34 +663,25 @@ export function WritingsListPage() {
                 : `${state.writings.length}`
             }
             size="small"
-            sx={{
-              bgcolor: '#4A7C5915',
-              color: '#4A7C59',
-              fontWeight: 600,
-              border: '1px solid #4A7C5930',
-            }}
+            className={styles.countChip}
           />
-        </Stack>
+        </Box>
       </Container>
 
       {/* Content */}
       <Box 
         ref={containerRef}
-        sx={{ 
-          flex: 1, 
-          minHeight: 0,
-          pb: 2,
-        }}
+        className={styles.contentArea}
       >
-        <Container maxWidth="lg" sx={{ height: '100%', px: 0 }}>
+        <Container maxWidth="lg" disableGutters className={styles.contentContainer}>
           {/* Empty state - no writings */}
           {state.writings.length === 0 && (
-            <Box sx={{ textAlign: 'center', py: 8 }}>
-              <BookOutlinedIcon sx={{ fontSize: 120, color: '#ccc', mb: 3 }} />
-              <Typography variant="h5" sx={{ color: '#666', mb: 1.5 }}>
+            <Box className={styles.emptyState}>
+              <BookOutlinedIcon className={styles.emptyIcon} />
+              <Typography className={styles.emptyTitle}>
                 Defteriniz boş
               </Typography>
-              <Typography variant="body1" sx={{ color: '#888', lineHeight: 1.8 }}>
+              <Typography className={styles.emptyText}>
                 Yeni bir yazı eklemek için
                 <br />
                 yukarıdaki düğmelere tıklayın
@@ -687,12 +691,12 @@ export function WritingsListPage() {
 
           {/* Empty state - no search results */}
           {state.writings.length > 0 && filteredWritings.length === 0 && (
-            <Box sx={{ textAlign: 'center', py: 8 }}>
-              <SearchOffIcon sx={{ fontSize: 100, color: '#ccc', mb: 3 }} />
-              <Typography variant="h5" sx={{ color: '#666', mb: 1.5 }}>
+            <Box className={styles.emptyState}>
+              <SearchOffIcon className={styles.emptyIcon} />
+              <Typography className={styles.emptyTitle}>
                 Sonuç bulunamadı
               </Typography>
-              <Typography variant="body1" sx={{ color: '#888' }}>
+              <Typography className={styles.emptyText}>
                 "{deferredSearch}" için yazı bulunamadı
               </Typography>
             </Box>
@@ -723,9 +727,9 @@ export function WritingsListPage() {
         onClose={handleCloseBookDialog}
         maxWidth="sm"
         fullWidth
-        PaperProps={{ sx: { borderRadius: '16px' } }}
+        PaperProps={{ sx: { borderRadius: 'var(--radius-lg)' } }}
       >
-        <DialogTitle sx={{ fontWeight: 600, fontSize: '24px' }}>
+        <DialogTitle className={styles.dialogTitle}>
           Yeni Kitap Oluştur
         </DialogTitle>
         <DialogContent>
@@ -743,28 +747,68 @@ export function WritingsListPage() {
             }}
             sx={{ mt: 1 }}
           />
-          <Typography variant="body2" sx={{ mt: 2, color: '#666' }}>
+          <Typography className={styles.dialogDescription}>
             Kitap oluşturduktan sonra yazılarınızı kitaba ekleyebilir, sıralayabilir ve PDF olarak indirebilirsiniz.
           </Typography>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={handleCloseBookDialog} sx={{ fontSize: '16px' }}>
+        <DialogActions className={styles.dialogActions}>
+          <Button onClick={handleCloseBookDialog} className={styles.dialogButton}>
             İptal
           </Button>
           <Button
             onClick={handleCreateBook}
             variant="contained"
             disabled={!bookTitle.trim()}
+            className={styles.dialogButton}
             sx={{
-              bgcolor: '#7B5EA7',
+              bgcolor: 'var(--color-secondary)',
               fontWeight: 600,
-              fontSize: '16px',
-              '&:hover': { bgcolor: '#6b4e97' },
+              '&:hover': { bgcolor: 'var(--color-secondary-hover)' },
             }}
           >
             Oluştur
           </Button>
         </DialogActions>
+      </Dialog>
+
+      {/* PDF Generation Notification Dialog */}
+      <Dialog
+        open={isGeneratingPdf}
+        PaperProps={{
+          sx: {
+            borderRadius: 'var(--radius-xl)',
+            p: 4,
+            textAlign: 'center',
+            minWidth: 320,
+            bgcolor: 'white',
+          },
+        }}
+      >
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+          <CircularProgress 
+            size={64} 
+            thickness={4}
+            sx={{ color: 'var(--color-secondary)' }} 
+          />
+          <Typography 
+            variant="h5" 
+            sx={{ 
+              fontWeight: 700, 
+              color: 'var(--color-text)',
+              fontSize: '1.5rem',
+            }}
+          >
+            Kitabınız Basılıyor
+          </Typography>
+          <Typography 
+            sx={{ 
+              color: 'var(--color-text-secondary)',
+              fontSize: '1rem',
+            }}
+          >
+            Lütfen bekleyin...
+          </Typography>
+        </Box>
       </Dialog>
     </Box>
   );

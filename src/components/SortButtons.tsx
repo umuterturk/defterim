@@ -5,6 +5,7 @@ import UpdateIcon from '@mui/icons-material/Update';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import styles from './SortButtons.module.css';
 
 export type SortType = 'alphabetic' | 'lastUpdated' | 'created';
 
@@ -43,6 +44,7 @@ const SortButton = memo(function SortButton({
   }, [onSortChange, option.type]);
 
   const ArrowIcon = sortAscending ? ArrowUpwardIcon : ArrowDownwardIcon;
+  const buttonClassName = `${styles.button} ${isSelected ? styles.buttonSelected : styles.buttonUnselected}`;
 
   return (
     <Button
@@ -50,30 +52,18 @@ const SortButton = memo(function SortButton({
       size="small"
       onClick={handleClick}
       startIcon={option.icon}
-      endIcon={isSelected ? <ArrowIcon sx={{ fontSize: '16px !important' }} /> : undefined}
-      sx={{
-        bgcolor: isSelected ? '#4A7C59' : 'white',
-        color: isSelected ? 'white' : '#666',
-        borderColor: isSelected ? '#4A7C59' : '#ddd',
-        borderRadius: '20px',
-        textTransform: 'none',
-        fontWeight: isSelected ? 600 : 500,
-        px: 2,
-        '&:hover': {
-          bgcolor: isSelected ? '#3d6b4a' : '#f5f5f5',
-          borderColor: isSelected ? '#3d6b4a' : '#ccc',
-        },
-      }}
+      endIcon={isSelected ? <ArrowIcon sx={{ fontSize: '14px !important' }} /> : undefined}
+      className={buttonClassName}
     >
-      {option.label}
+      <span className={styles.buttonText}>{option.label}</span>
     </Button>
   );
 });
 
 export const SortButtons = memo(function SortButtons({ sortType, sortAscending, onSortChange }: SortButtonsProps) {
   return (
-    <Stack direction="row" spacing={1} alignItems="center">
-      <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+    <Stack direction="row" className={styles.container}>
+      <Typography className={styles.label}>
         Sırala:
       </Typography>
       {sortOptions.map((option) => (
