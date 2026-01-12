@@ -284,11 +284,6 @@ export function WritingsListPage() {
     isOnline,
   }), [filteredWritings, handleOpenWriting, isAvailableOffline, isOnline]);
 
-  // Stable key function for react-window - use writing ID instead of index
-  const itemKey = useCallback((index: number) => {
-    return filteredWritings[index]?.id ?? index;
-  }, [filteredWritings]);
-
   // Loading state - initial load (wait until fully initialized)
   if (!state.isInitialized) {
     return (
@@ -524,7 +519,6 @@ export function WritingsListPage() {
               rowComponent={VirtualizedRow as unknown as (props: RowComponentProps<ListRowProps>) => React.ReactElement | null}
               rowProps={rowProps}
               overscanCount={5}
-              itemKey={itemKey}
               style={{ height: containerHeight, width: '100%' }}
             />
           )}
