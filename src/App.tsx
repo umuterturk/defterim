@@ -1,0 +1,104 @@
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
+import { WritingsProvider } from './contexts/WritingsContext';
+import { WritingsListPage } from './pages/WritingsListPage';
+import { EditorPage } from './pages/EditorPage';
+
+// Create theme matching Flutter app colors
+const theme = createTheme({
+  palette: {
+    primary: {
+      main: '#4A7C59',
+    },
+    secondary: {
+      main: '#7B5EA7',
+    },
+    background: {
+      default: '#F5F5F0',
+      paper: '#FFFFF8',
+    },
+    text: {
+      primary: '#2C2C2C',
+      secondary: '#666666',
+    },
+  },
+  typography: {
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    h4: {
+      fontWeight: 600,
+    },
+    h5: {
+      fontWeight: 500,
+    },
+    h6: {
+      fontWeight: 600,
+    },
+    body1: {
+      fontSize: '18px',
+    },
+    body2: {
+      fontSize: '16px',
+    },
+  },
+  components: {
+    MuiCssBaseline: {
+      styleOverrides: {
+        body: {
+          backgroundColor: '#F5F5F0',
+        },
+      },
+    },
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          textTransform: 'none',
+          borderRadius: '8px',
+        },
+      },
+    },
+    MuiTextField: {
+      styleOverrides: {
+        root: {
+          '& .MuiOutlinedInput-root': {
+            borderRadius: '12px',
+          },
+        },
+      },
+    },
+    MuiCard: {
+      styleOverrides: {
+        root: {
+          borderRadius: '12px',
+        },
+      },
+    },
+    MuiFab: {
+      styleOverrides: {
+        root: {
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+        },
+      },
+    },
+  },
+});
+
+function App() {
+  // Use base path from Vite config for GitHub Pages deployment
+  const basename = import.meta.env.BASE_URL;
+  
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <WritingsProvider>
+        <BrowserRouter basename={basename}>
+          <Routes>
+            <Route path="/" element={<WritingsListPage />} />
+            <Route path="/editor/:id" element={<EditorPage />} />
+          </Routes>
+        </BrowserRouter>
+      </WritingsProvider>
+    </ThemeProvider>
+  );
+}
+
+export default App;
