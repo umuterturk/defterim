@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useDeferredValue, useRef, useEffect, memo } from 'react';
+import React, { useState, useMemo, useCallback, useDeferredValue, useRef, useEffect, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { List, useListRef, type RowComponentProps } from 'react-window';
 import {
@@ -44,7 +44,8 @@ interface ListRowProps {
 }
 
 // Memoized virtualized row component - prevents unnecessary re-renders
-const VirtualizedRow = memo(function VirtualizedRow({ index, style, writings, onOpen, isAvailableOffline, isOnline }: RowComponentProps<ListRowProps>) {
+// eslint-disable-next-line react/display-name
+const VirtualizedRow = memo<RowComponentProps<ListRowProps>>(({ index, style, writings, onOpen, isAvailableOffline, isOnline }) => {
   const writing = writings[index];
   
   // Memoize the tap handler to prevent WritingCard re-renders
@@ -519,7 +520,8 @@ export function WritingsListPage() {
               listRef={listRef}
               rowCount={filteredWritings.length}
               rowHeight={CARD_HEIGHT}
-              rowComponent={VirtualizedRow}
+              // Type assertion needed due to memo() changing the component type
+              rowComponent={VirtualizedRow as unknown as (props: RowComponentProps<ListRowProps>) => React.ReactElement | null}
               rowProps={rowProps}
               overscanCount={5}
               itemKey={itemKey}
