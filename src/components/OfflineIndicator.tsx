@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Snackbar, Alert, Slide, type SlideProps } from '@mui/material';
 import CloudOffIcon from '@mui/icons-material/CloudOff';
 import CloudDoneIcon from '@mui/icons-material/CloudDone';
@@ -16,17 +16,20 @@ function SlideTransition(props: SlideProps) {
 export function OfflineIndicator({ showSaveInfo = false }: OfflineIndicatorProps) {
   const isOnline = useOnlineStatus();
   const [showOnlineMessage, setShowOnlineMessage] = useState(false);
-  const [wasOffline, setWasOffline] = useState(false);
+  const wasOfflineRef = useRef(false);
 
+  // Track online/offline transitions to show "back online" message
+  // This is intentional state synchronization from external system (network status)
   useEffect(() => {
     if (!isOnline) {
-      setWasOffline(true);
-    } else if (wasOffline) {
-      // Just came back online
+      wasOfflineRef.current = true;
+    } else if (wasOfflineRef.current) {
+      // Just came back online - show notification
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShowOnlineMessage(true);
-      setWasOffline(false);
+      wasOfflineRef.current = false;
     }
-  }, [isOnline, wasOffline]);
+  }, [isOnline]);
 
   const handleCloseOnlineMessage = () => {
     setShowOnlineMessage(false);

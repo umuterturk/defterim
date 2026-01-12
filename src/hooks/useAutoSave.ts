@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 
 interface UseAutoSaveOptions {
   data: unknown;
@@ -20,15 +20,18 @@ export function useAutoSave({
   saveNow: () => Promise<void>;
 } {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hasUnsavedChangesRef = useRef(false);
-  const initialDataRef = useRef<string>(JSON.stringify(data));
+  const onSaveRef = useRef(onSave);
+  // Track the "saved" data state - when this matches current data, no unsaved changes
+  const [savedDataSnapshot, setSavedDataSnapshot] = useState(() => JSON.stringify(data));
 
-  // Track if data has changed from initial
-  const currentData = JSON.stringify(data);
-  const hasChanges = currentData !== initialDataRef.current;
+  // Keep onSave ref up to date
+  useEffect(() => {
+    onSaveRef.current = onSave;
+  }, [onSave]);
 
-  // Update unsaved changes flag
-  hasUnsavedChangesRef.current = hasChanges;
+  // Compute hasUnsavedChanges from current data vs saved snapshot
+  const currentDataStr = useMemo(() => JSON.stringify(data), [data]);
+  const hasUnsavedChanges = currentDataStr !== savedDataSnapshot;
 
   // Save function
   const saveNow = useCallback(async () => {
@@ -37,16 +40,13 @@ export function useAutoSave({
       timerRef.current = null;
     }
     
-    if (hasUnsavedChangesRef.current) {
-      await onSave();
-      initialDataRef.current = JSON.stringify(data);
-      hasUnsavedChangesRef.current = false;
-    }
-  }, [onSave, data]);
+    await onSaveRef.current();
+    setSavedDataSnapshot(JSON.stringify(data));
+  }, [data]);
 
   // Auto-save effect
   useEffect(() => {
-    if (!enabled || !hasChanges) {
+    if (!enabled || !hasUnsavedChanges) {
       return;
     }
 
@@ -57,11 +57,8 @@ export function useAutoSave({
 
     // Set new timer
     timerRef.current = setTimeout(async () => {
-      if (hasUnsavedChangesRef.current) {
-        await onSave();
-        initialDataRef.current = JSON.stringify(data);
-        hasUnsavedChangesRef.current = false;
-      }
+      await onSaveRef.current();
+      setSavedDataSnapshot(JSON.stringify(data));
     }, delay);
 
     return () => {
@@ -69,10 +66,10 @@ export function useAutoSave({
         clearTimeout(timerRef.current);
       }
     };
-  }, [currentData, delay, enabled, onSave, hasChanges, data]);
+  }, [currentDataStr, delay, enabled, hasUnsavedChanges, data]);
 
   return {
-    hasUnsavedChanges: hasChanges,
+    hasUnsavedChanges,
     saveNow,
   };
 }

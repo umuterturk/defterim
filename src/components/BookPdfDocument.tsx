@@ -167,6 +167,7 @@ interface TitlePageProps {
   author: string;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 function TitlePage({ book, author }: TitlePageProps) {
   const currentDate = formatDateTurkish(new Date());
   
@@ -182,6 +183,7 @@ function TitlePage({ book, author }: TitlePageProps) {
 }
 
 // Regular writing page component
+// eslint-disable-next-line react-refresh/only-export-components
 function WritingPage({ writing, pageNumber }: { writing: WritingWithContent; pageNumber: number }) {
   return (
     <Page size="A4" style={styles.writingPage}>
@@ -200,6 +202,7 @@ function WritingPage({ writing, pageNumber }: { writing: WritingWithContent; pag
 }
 
 // Poem page component - centered, artistic layout
+// eslint-disable-next-line react-refresh/only-export-components
 function PoemPage({ writing, pageNumber }: { writing: WritingWithContent; pageNumber: number }) {
   return (
     <Page size="A4" style={styles.poemPage}>
@@ -224,6 +227,7 @@ interface BookPdfDocumentProps {
   author: string;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 function BookPdfDocument({ book, writings, author }: BookPdfDocumentProps) {
   return (
     <Document>
