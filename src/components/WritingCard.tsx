@@ -1,4 +1,4 @@
-import { memo, type ReactElement } from 'react';
+import { memo } from 'react';
 import {
   Card,
   CardContent,
@@ -8,12 +8,10 @@ import {
   Box,
   Tooltip,
 } from '@mui/material';
-import AutoStoriesIcon from '@mui/icons-material/AutoStories';
-import ArticleIcon from '@mui/icons-material/Article';
-import NotesIcon from '@mui/icons-material/Notes';
 import CloudOffOutlinedIcon from '@mui/icons-material/CloudOffOutlined';
-import type { WritingMetadata, WritingType } from '../types/writing';
+import type { WritingMetadata } from '../types/writing';
 import { writingTypeDisplayName } from '../types/writing';
+import { WRITING_TYPE_ICONS, WRITING_TYPE_COLORS } from '../config/writingTypes';
 import { BookToggleButton } from './BookToggleButton';
 import styles from './WritingCard.module.css';
 
@@ -23,18 +21,6 @@ interface WritingCardProps {
   isAvailableOffline?: boolean;
   isOnline?: boolean;
 }
-
-const typeIcons: Record<WritingType, ReactElement> = {
-  siir: <AutoStoriesIcon fontSize="small" />,
-  yazi: <ArticleIcon fontSize="small" />,
-  diger: <NotesIcon fontSize="small" />,
-};
-
-const typeColors: Record<WritingType, string> = {
-  siir: '#7B5EA7',  // Purple
-  yazi: '#4A7C59',  // Green
-  diger: '#5A8AB5', // Blue
-};
 
 // Memoized date formatter
 const dateFormatCache = new Map<string, string>();
@@ -75,7 +61,7 @@ function WritingCardComponent({ metadata, onTap, isAvailableOffline = true, isOn
   const previewClassName = `${styles.preview} ${isUnavailable ? styles.previewUnavailable : ''}`;
   const dateClassName = `${styles.date} ${isUnavailable ? styles.dateUnavailable : ''}`;
   
-  const chipColor = isUnavailable ? '#999' : typeColors[metadata.type];
+  const chipColor = isUnavailable ? '#999' : WRITING_TYPE_COLORS[metadata.type];
 
   return (
     <Card className={cardClassName}>
@@ -87,7 +73,7 @@ function WritingCardComponent({ metadata, onTap, isAvailableOffline = true, isOn
           {/* Row 1: Type + Title */}
           <Box className={styles.titleRow}>
             <Chip
-              icon={typeIcons[metadata.type]}
+              icon={WRITING_TYPE_ICONS[metadata.type]}
               label={writingTypeDisplayName[metadata.type]}
               size="small"
               className={typeChipClassName}

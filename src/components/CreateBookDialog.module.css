@@ -1,0 +1,20 @@
+/* CreateBookDialog Styles */
+
+.title {
+  font-weight: 600;
+  font-size: var(--font-size-xl);
+}
+
+.description {
+  margin-top: 1rem;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.actions {
+  padding: 0.75rem 1.5rem 1rem;
+}
+
+.button {
+  font-size: var(--font-size-base);
+}

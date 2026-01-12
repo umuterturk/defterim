@@ -1,10 +1,12 @@
 import { memo, useMemo, useCallback, type ReactElement } from 'react';
 import { Chip, Stack } from '@mui/material';
 import LibraryBooksIcon from '@mui/icons-material/LibraryBooks';
-import AutoStoriesIcon from '@mui/icons-material/AutoStories';
-import ArticleIcon from '@mui/icons-material/Article';
 import type { WritingType, WritingMetadata } from '../types/writing';
+import { WRITING_TYPE_ICONS, WRITING_TYPE_COLORS } from '../config/writingTypes';
 import styles from './TypeFilterChips.module.css';
+
+// Color for "All" filter (neutral gray, not in WRITING_TYPE_COLORS)
+const ALL_FILTER_COLOR = '#5A6A7A';
 
 interface TypeFilterChipsProps {
   selectedType: WritingType | null;
@@ -24,19 +26,19 @@ const filterOptions: FilterOption[] = [
     type: null,
     label: 'Hepsi',
     icon: <LibraryBooksIcon fontSize="small" />,
-    color: '#5A6A7A',
+    color: ALL_FILTER_COLOR,
   },
   {
     type: 'siir',
     label: 'Şiirler',
-    icon: <AutoStoriesIcon fontSize="small" />,
-    color: '#7B5EA7',
+    icon: WRITING_TYPE_ICONS.siir,
+    color: WRITING_TYPE_COLORS.siir,
   },
   {
     type: 'yazi',
     label: 'Yazılar',
-    icon: <ArticleIcon fontSize="small" />,
-    color: '#4A7C59',
+    icon: WRITING_TYPE_ICONS.yazi,
+    color: WRITING_TYPE_COLORS.yazi,
   },
 ];
 

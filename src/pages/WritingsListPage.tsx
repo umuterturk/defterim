@@ -13,45 +13,55 @@ import {
   CircularProgress,
   Chip,
   LinearProgress,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Menu,
-  MenuItem,
-  ListItemIcon,
-  ListItemText,
-  Divider,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
 import AutoStoriesIcon from '@mui/icons-material/AutoStories';
 import EditNoteIcon from '@mui/icons-material/EditNote';
 import BookOutlinedIcon from '@mui/icons-material/BookOutlined';
-import MenuBookIcon from '@mui/icons-material/MenuBook';
 import SearchOffIcon from '@mui/icons-material/SearchOff';
 import CloudSyncIcon from '@mui/icons-material/CloudSync';
-import CheckIcon from '@mui/icons-material/Check';
-import AddIcon from '@mui/icons-material/Add';
-import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
-import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import { useWritings } from '../contexts/WritingsContext';
 import { useBook } from '../contexts/BookContext';
 import { WritingCard } from '../components/WritingCard';
 import { TypeFilterChips } from '../components/TypeFilterChips';
 import { SortButtons, type SortType } from '../components/SortButtons';
 import { OfflineIndicator } from '../components/OfflineIndicator';
+import { BookMenuDropdown } from '../components/BookMenuDropdown';
+import { CreateBookDialog } from '../components/CreateBookDialog';
+import { PdfGeneratingDialog } from '../components/PdfGeneratingDialog';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { useDebounce } from '../hooks/useDebounce';
 import type { WritingMetadata, WritingType } from '../types/writing';
 import { generateBookPdf } from '../components/BookPdfDocument';
 import styles from './WritingsListPage.module.css';
 
-// Card height including margin
+// Configuration constants
 const CARD_HEIGHT = 150;
-
-// Session storage key for scroll position
 const SCROLL_POSITION_KEY = 'writings-list-scroll-position';
+const SEARCH_DEBOUNCE_MS = 300;
+const SCROLL_RESTORE_MAX_ATTEMPTS = 10;
+const VIRTUALIZED_OVERSCAN_COUNT = 5;
+const CONTAINER_BOTTOM_GAP_PX = 5;
+
+// Static MUI sx objects - hoisted to prevent recreation on every render
+const LINEAR_PROGRESS_SX = {
+  height: 3,
+  bgcolor: 'transparent',
+  '& .MuiLinearProgress-bar': { bgcolor: 'var(--color-primary)' },
+} as const;
+
+const SIIR_BUTTON_SX = {
+  bgcolor: 'var(--color-secondary)',
+  color: 'white',
+  '&:hover': { bgcolor: 'var(--color-secondary-hover)' },
+} as const;
+
+const YAZI_BUTTON_SX = {
+  bgcolor: 'var(--color-primary)',
+  color: 'white',
+  '&:hover': { bgcolor: 'var(--color-primary-hover)' },
+} as const;
 
 // Row props type for virtualized list
 interface ListRowProps {
@@ -61,9 +71,18 @@ interface ListRowProps {
   isOnline: boolean;
 }
 
+// Type expected by react-window List component
+type RowComponent<T extends object> = (props: RowComponentProps<T>) => React.ReactElement | null;
+
 // Memoized virtualized row component - prevents unnecessary re-renders
-// eslint-disable-next-line react/display-name
-const VirtualizedRow = memo<RowComponentProps<ListRowProps>>(({ index, style, writings, onOpen, isAvailableOffline, isOnline }) => {
+const VirtualizedRow: RowComponent<ListRowProps> = memo(function VirtualizedRow({ 
+  index, 
+  style, 
+  writings, 
+  onOpen, 
+  isAvailableOffline, 
+  isOnline 
+}: RowComponentProps<ListRowProps>) {
   const writing = writings[index];
   
   // Memoize the tap handler to prevent WritingCard re-renders
@@ -83,23 +102,12 @@ const VirtualizedRow = memo<RowComponentProps<ListRowProps>>(({ index, style, wr
       />
     </div>
   );
-}, (prevProps, nextProps) => {
-  // Custom comparison - only re-render if this specific row's data changed
-  const prevWriting = prevProps.writings[prevProps.index];
-  const nextWriting = nextProps.writings[nextProps.index];
-  
-  return (
-    prevProps.index === nextProps.index &&
-    prevProps.onOpen === nextProps.onOpen &&
-    prevProps.isOnline === nextProps.isOnline &&
-    prevProps.isAvailableOffline === nextProps.isAvailableOffline &&
-    prevWriting?.id === nextWriting?.id &&
-    prevWriting?.title === nextWriting?.title &&
-    prevWriting?.preview === nextWriting?.preview &&
-    prevWriting?.updatedAt === nextWriting?.updatedAt &&
-    prevWriting?.type === nextWriting?.type
-  );
-});
+}, (prev, next) => 
+  // Simplified comparison - writings array is already memoized, so reference check is sufficient
+  prev.writings === next.writings && 
+  prev.index === next.index &&
+  prev.isOnline === next.isOnline
+) as RowComponent<ListRowProps>;
 
 export function WritingsListPage() {
   const navigate = useNavigate();
@@ -120,14 +128,12 @@ export function WritingsListPage() {
 
   // Book creation dialog state
   const [showBookDialog, setShowBookDialog] = useState(false);
-  const [bookTitle, setBookTitle] = useState('');
 
-  // Book menu state
-  const [bookMenuAnchor, setBookMenuAnchor] = useState<null | HTMLElement>(null);
+  // PDF generation state
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
-  // Debounce search query with 300ms delay
-  const deferredSearch = useDebounce(searchQuery, 300);
+  // Debounce search query
+  const deferredSearch = useDebounce(searchQuery, SEARCH_DEBOUNCE_MS);
   // Use deferred value for other filters - allows UI to be responsive
   const deferredType = useDeferredValue(selectedType);
   const deferredSortType = useDeferredValue(sortType);
@@ -139,43 +145,23 @@ export function WritingsListPage() {
                       sortType !== deferredSortType ||
                       sortAscending !== deferredSortAscending;
 
-  // Pre-sort writings once when data changes
-  const sortedWritingsCache = useMemo(() => {
-    const cache: Record<string, WritingMetadata[]> = {};
-    
-    // Pre-compute sorted arrays for each sort type
+  // Lazy sort - only compute the active sort type (instead of pre-computing all 6)
+  const sortedWritings = useMemo(() => {
     const writings = [...state.writings];
     
-    // Alphabetic ascending
-    const alphaAsc = [...writings].sort((a, b) => {
-      const titleA = a.title || 'başlıksız';
-      const titleB = b.title || 'başlıksız';
-      return titleA.localeCompare(titleB, 'tr');
-    });
-    cache['alphabetic-asc'] = alphaAsc;
-    cache['alphabetic-desc'] = [...alphaAsc].reverse();
+    const compareFns: Record<SortType, (a: WritingMetadata, b: WritingMetadata) => number> = {
+      alphabetic: (a, b) => (a.title || 'başlıksız').localeCompare(b.title || 'başlıksız', 'tr'),
+      lastUpdated: (a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime(),
+      created: (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    };
     
-    // Last updated
-    const updatedAsc = [...writings].sort((a, b) => 
-      new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
-    );
-    cache['lastUpdated-asc'] = updatedAsc;
-    cache['lastUpdated-desc'] = [...updatedAsc].reverse();
-    
-    // Created
-    const createdAsc = [...writings].sort((a, b) => 
-      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
-    cache['created-asc'] = createdAsc;
-    cache['created-desc'] = [...createdAsc].reverse();
-    
-    return cache;
-  }, [state.writings]);
+    writings.sort(compareFns[deferredSortType]);
+    return deferredSortAscending ? writings : writings.reverse();
+  }, [state.writings, deferredSortType, deferredSortAscending]);
 
-  // Filter and get sorted writings using deferred values
+  // Filter writings using deferred values
   const filteredWritings = useMemo(() => {
-    const sortKey = `${deferredSortType}-${deferredSortAscending ? 'asc' : 'desc'}`;
-    let result = sortedWritingsCache[sortKey] || state.writings;
+    let result = sortedWritings;
 
     // Filter by type first (fast)
     if (deferredType) {
@@ -203,7 +189,7 @@ export function WritingsListPage() {
     }
 
     return result;
-  }, [sortedWritingsCache, deferredSearch, deferredType, deferredSortType, deferredSortAscending, state.writings]);
+  }, [sortedWritings, deferredSearch, deferredType]);
 
   // Reset scroll position when filter/sort changes (but not on initial mount)
   useEffect(() => {
@@ -214,7 +200,6 @@ export function WritingsListPage() {
     
     const element = listRef.current?.element;
     if (element) {
-      console.log('[ScrollReset] Resetting scroll due to filter/sort change');
       element.scrollTop = 0;
       sessionStorage.removeItem(SCROLL_POSITION_KEY);
     }
@@ -230,27 +215,20 @@ export function WritingsListPage() {
     const scrollTop = parseInt(savedScrollTop, 10);
     if (scrollTop === 0) return; // No need to restore if at top
     
-    console.log('[ScrollRestore] Attempting to restore scrollTop:', scrollTop);
-    
     // Try to restore with retries (element might not be ready immediately)
     let attempts = 0;
-    const maxAttempts = 10;
     
     const tryRestore = () => {
       const element = listRef.current?.element;
       attempts++;
       
       if (element && element.scrollHeight > 0) {
-        console.log('[ScrollRestore] Setting scrollTop to:', scrollTop, 'scrollHeight:', element.scrollHeight);
         element.scrollTop = scrollTop;
         hasRestoredScrollRef.current = true;
         // Clear the saved position after restoring
         sessionStorage.removeItem(SCROLL_POSITION_KEY);
-      } else if (attempts < maxAttempts) {
-        console.log('[ScrollRestore] Element not ready, retry', attempts);
+      } else if (attempts < SCROLL_RESTORE_MAX_ATTEMPTS) {
         requestAnimationFrame(tryRestore);
-      } else {
-        console.log('[ScrollRestore] Max attempts reached, giving up');
       }
     };
     
@@ -263,7 +241,7 @@ export function WritingsListPage() {
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
         const viewportHeight = window.innerHeight;
-        setContainerHeight(viewportHeight - rect.top - 5); // 5px gap at bottom
+        setContainerHeight(viewportHeight - rect.top - CONTAINER_BOTTOM_GAP_PX);
       }
     };
 
@@ -286,7 +264,6 @@ export function WritingsListPage() {
     // Save scroll position before navigating
     const element = listRef.current?.element;
     if (element) {
-      console.log('[ScrollSave] Saving scrollTop:', element.scrollTop);
       sessionStorage.setItem(SCROLL_POSITION_KEY, String(element.scrollTop));
     }
     setSearchQuery('');
@@ -299,7 +276,6 @@ export function WritingsListPage() {
     // Save scroll position before navigating
     const element = listRef.current?.element;
     if (element) {
-      console.log('[ScrollSave] Saving scrollTop:', element.scrollTop);
       sessionStorage.setItem(SCROLL_POSITION_KEY, String(element.scrollTop));
     }
     setSearchQuery('');
@@ -316,22 +292,18 @@ export function WritingsListPage() {
 
   // Book handlers
   const handleOpenBookDialog = useCallback(() => {
-    setBookTitle('');
     setShowBookDialog(true);
   }, []);
 
   const handleCloseBookDialog = useCallback(() => {
     setShowBookDialog(false);
-    setBookTitle('');
   }, []);
 
-  const handleCreateBook = useCallback(async () => {
-    if (!bookTitle.trim()) return;
-    const book = await createNewBook(bookTitle.trim());
+  const handleCreateBookFromDialog = useCallback(async (title: string) => {
+    const book = await createNewBook(title);
     setShowBookDialog(false);
-    setBookTitle('');
     navigate(`/book/${book.id}`);
-  }, [bookTitle, createNewBook, navigate]);
+  }, [createNewBook, navigate]);
 
   const handleNavigateToBook = useCallback(() => {
     if (bookState.activeBook) {
@@ -339,25 +311,9 @@ export function WritingsListPage() {
     }
   }, [bookState.activeBook, navigate]);
 
-  // Book menu handlers
-  const handleOpenBookMenu = useCallback((event: React.MouseEvent<HTMLElement>) => {
-    setBookMenuAnchor(event.currentTarget);
-  }, []);
-
-  const handleCloseBookMenu = useCallback(() => {
-    setBookMenuAnchor(null);
-  }, []);
-
   const handleSelectBook = useCallback(async (bookId: string) => {
     await setActiveBook(bookId);
-    setBookMenuAnchor(null);
   }, [setActiveBook]);
-
-  const handleCreateNewBookFromMenu = useCallback(() => {
-    setBookMenuAnchor(null);
-    setBookTitle('');
-    setShowBookDialog(true);
-  }, []);
 
   // Get writing metadata for items in active book (for PDF generation)
   const bookWritings = useMemo(() => {
@@ -371,7 +327,6 @@ export function WritingsListPage() {
   const handlePrintBook = useCallback(async () => {
     if (!bookState.activeBook) return;
     
-    setBookMenuAnchor(null);
     setIsGeneratingPdf(true);
     try {
       await generateBookPdf(
@@ -420,11 +375,7 @@ export function WritingsListPage() {
           <LinearProgress 
             variant={state.syncProgress > 0 ? 'determinate' : 'indeterminate'} 
             value={state.syncProgress}
-            sx={{ 
-              height: 3,
-              bgcolor: 'transparent',
-              '& .MuiLinearProgress-bar': { bgcolor: 'var(--color-primary)' },
-            }} 
+            sx={LINEAR_PROGRESS_SX} 
           />
           <Stack 
             direction="row" 
@@ -464,115 +415,16 @@ export function WritingsListPage() {
             <Box className={styles.headerActions}>
               {/* Book button with dropdown */}
               <Box className={styles.bookButtonWrapper}>
-                {bookState.books.length > 0 || bookState.activeBook ? (
-                  <>
-                    <Button
-                      variant="outlined"
-                      onClick={handleOpenBookMenu}
-                      startIcon={<MenuBookIcon />}
-                      endIcon={<ArrowDropDownIcon />}
-                      className={`${styles.actionButton} ${styles.bookButton} ${bookState.activeBook ? styles.bookButtonActive : ''}`}
-                    >
-                      {bookState.activeBook ? (
-                        <>
-                          {bookState.activeBook.title}
-                          <Chip
-                            label={bookState.activeBook.writingIds.length}
-                            size="small"
-                            sx={{
-                              ml: 1,
-                              height: 20,
-                              minWidth: 20,
-                              bgcolor: 'var(--color-secondary)',
-                              color: 'white',
-                              fontSize: 'var(--font-size-xs)',
-                              fontWeight: 600,
-                            }}
-                          />
-                        </>
-                      ) : (
-                        'Kitap Seç'
-                      )}
-                    </Button>
-                    <Menu
-                      anchorEl={bookMenuAnchor}
-                      open={Boolean(bookMenuAnchor)}
-                      onClose={handleCloseBookMenu}
-                      PaperProps={{
-                        sx: {
-                          borderRadius: 'var(--radius-md)',
-                          minWidth: 200,
-                          mt: 1,
-                        },
-                      }}
-                    >
-                      {/* Edit current book option */}
-                      {bookState.activeBook && (
-                        <MenuItem onClick={handleNavigateToBook}>
-                          <ListItemIcon>
-                            <MenuBookIcon fontSize="small" sx={{ color: 'var(--color-secondary)' }} />
-                          </ListItemIcon>
-                          <ListItemText primary="Kitabı Düzenle" />
-                        </MenuItem>
-                      )}
-                      {/* Print current book option */}
-                      {bookState.activeBook && (
-                        <MenuItem 
-                          onClick={handlePrintBook}
-                          disabled={isGeneratingPdf || bookWritings.length === 0}
-                        >
-                          <ListItemIcon>
-                            <PictureAsPdfIcon fontSize="small" sx={{ color: 'var(--color-secondary)' }} />
-                          </ListItemIcon>
-                          <ListItemText primary={isGeneratingPdf ? "PDF Oluşturuluyor..." : "Kitabı Yazdır"} />
-                        </MenuItem>
-                      )}
-                      {bookState.activeBook && bookState.books.length > 0 && <Divider />}
-                      
-                      {/* List of books */}
-                      {bookState.books
-                        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                        .map((book) => (
-                          <MenuItem
-                            key={book.id}
-                            onClick={() => handleSelectBook(book.id)}
-                            selected={bookState.activeBook?.id === book.id}
-                          >
-                            <ListItemIcon>
-                              {bookState.activeBook?.id === book.id ? (
-                                <CheckIcon fontSize="small" sx={{ color: 'var(--color-secondary)' }} />
-                              ) : (
-                                <Box sx={{ width: 20 }} />
-                              )}
-                            </ListItemIcon>
-                            <ListItemText 
-                              primary={book.title} 
-                              secondary={`${book.writingCount} yazı`}
-                            />
-                          </MenuItem>
-                        ))}
-                      
-                      <Divider />
-                      
-                      {/* Create new book option */}
-                      <MenuItem onClick={handleCreateNewBookFromMenu}>
-                        <ListItemIcon>
-                          <AddIcon fontSize="small" />
-                        </ListItemIcon>
-                        <ListItemText primary="Yeni Kitap Oluştur" />
-                      </MenuItem>
-                    </Menu>
-                  </>
-                ) : (
-                  <Button
-                    variant="outlined"
-                    onClick={handleOpenBookDialog}
-                    startIcon={<MenuBookIcon />}
-                    className={`${styles.actionButton} ${styles.bookButton}`}
-                  >
-                    <span className={styles.buttonText}>Oluştur</span>
-                  </Button>
-                )}
+                <BookMenuDropdown
+                  books={bookState.books}
+                  activeBook={bookState.activeBook}
+                  isGeneratingPdf={isGeneratingPdf}
+                  bookWritingsCount={bookWritings.length}
+                  onNavigateToBook={handleNavigateToBook}
+                  onSelectBook={handleSelectBook}
+                  onCreateNew={handleOpenBookDialog}
+                  onPrintBook={handlePrintBook}
+                />
               </Box>
               
               {/* New writing buttons */}
@@ -582,11 +434,7 @@ export function WritingsListPage() {
                   onClick={() => handleCreateWriting('siir')}
                   startIcon={<AutoStoriesIcon />}
                   className={styles.actionButton}
-                  sx={{
-                    bgcolor: 'var(--color-secondary)',
-                    color: 'white',
-                    '&:hover': { bgcolor: 'var(--color-secondary-hover)' },
-                  }}
+                  sx={SIIR_BUTTON_SX}
                 >
                   <span className={styles.buttonText}>Yeni Şiir</span>
                 </Button>
@@ -595,11 +443,7 @@ export function WritingsListPage() {
                   onClick={() => handleCreateWriting('yazi')}
                   startIcon={<EditNoteIcon />}
                   className={styles.actionButton}
-                  sx={{
-                    bgcolor: 'var(--color-primary)',
-                    color: 'white',
-                    '&:hover': { bgcolor: 'var(--color-primary-hover)' },
-                  }}
+                  sx={YAZI_BUTTON_SX}
                 >
                   <span className={styles.buttonText}>Yeni Yazı</span>
                 </Button>
@@ -619,19 +463,6 @@ export function WritingsListPage() {
           onChange={handleSearchChange}
           size="small"
           className={styles.searchField}
-          sx={{
-            '& .MuiOutlinedInput-root': {
-              bgcolor: 'white',
-              borderRadius: 'var(--radius-sm)',
-              height: { xs: 36, sm: 40 },
-              '& fieldset': { borderColor: 'var(--color-border-light)' },
-              '&:hover fieldset': { borderColor: '#bbb' },
-              '&.Mui-focused fieldset': { borderColor: 'var(--color-primary)', borderWidth: 2 },
-            },
-            '& .MuiOutlinedInput-input': {
-              py: { xs: 0.75, sm: 1 },
-            },
-          }}
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
@@ -714,10 +545,9 @@ export function WritingsListPage() {
               listRef={listRef}
               rowCount={filteredWritings.length}
               rowHeight={CARD_HEIGHT}
-              // Type assertion needed due to memo() changing the component type
-              rowComponent={VirtualizedRow as unknown as (props: RowComponentProps<ListRowProps>) => React.ReactElement | null}
+              rowComponent={VirtualizedRow}
               rowProps={rowProps}
-              overscanCount={5}
+              overscanCount={VIRTUALIZED_OVERSCAN_COUNT}
               style={{ height: containerHeight, width: '100%' }}
             />
           )}
@@ -728,94 +558,14 @@ export function WritingsListPage() {
       <OfflineIndicator />
 
       {/* Create Book Dialog */}
-      <Dialog
+      <CreateBookDialog
         open={showBookDialog}
         onClose={handleCloseBookDialog}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{ sx: { borderRadius: 'var(--radius-lg)' } }}
-      >
-        <DialogTitle className={styles.dialogTitle}>
-          Yeni Kitap Oluştur
-        </DialogTitle>
-        <DialogContent>
-          <TextField
-            autoFocus
-            fullWidth
-            label="Kitap Adı"
-            placeholder="Kitabınıza bir isim verin..."
-            value={bookTitle}
-            onChange={(e) => setBookTitle(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && bookTitle.trim()) {
-                handleCreateBook();
-              }
-            }}
-            sx={{ mt: 1 }}
-          />
-          <Typography className={styles.dialogDescription}>
-            Kitap oluşturduktan sonra yazılarınızı kitaba ekleyebilir, sıralayabilir ve PDF olarak indirebilirsiniz.
-          </Typography>
-        </DialogContent>
-        <DialogActions className={styles.dialogActions}>
-          <Button onClick={handleCloseBookDialog} className={styles.dialogButton}>
-            İptal
-          </Button>
-          <Button
-            onClick={handleCreateBook}
-            variant="contained"
-            disabled={!bookTitle.trim()}
-            className={styles.dialogButton}
-            sx={{
-              bgcolor: 'var(--color-secondary)',
-              fontWeight: 600,
-              '&:hover': { bgcolor: 'var(--color-secondary-hover)' },
-            }}
-          >
-            Oluştur
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onCreate={handleCreateBookFromDialog}
+      />
 
       {/* PDF Generation Notification Dialog */}
-      <Dialog
-        open={isGeneratingPdf}
-        PaperProps={{
-          sx: {
-            borderRadius: 'var(--radius-xl)',
-            p: 4,
-            textAlign: 'center',
-            minWidth: 320,
-            bgcolor: 'white',
-          },
-        }}
-      >
-        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-          <CircularProgress 
-            size={64} 
-            thickness={4}
-            sx={{ color: 'var(--color-secondary)' }} 
-          />
-          <Typography 
-            variant="h5" 
-            sx={{ 
-              fontWeight: 700, 
-              color: 'var(--color-text)',
-              fontSize: '1.5rem',
-            }}
-          >
-            Kitabınız Basılıyor
-          </Typography>
-          <Typography 
-            sx={{ 
-              color: 'var(--color-text-secondary)',
-              fontSize: '1rem',
-            }}
-          >
-            Lütfen bekleyin...
-          </Typography>
-        </Box>
-      </Dialog>
+      <PdfGeneratingDialog open={isGeneratingPdf} />
     </Box>
   );
 }
