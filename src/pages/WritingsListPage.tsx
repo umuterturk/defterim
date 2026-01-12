@@ -461,144 +461,150 @@ export function WritingsListPage() {
             </Box>
             
             {/* Book and new writing buttons */}
-            <Stack direction="row" spacing={1} className={styles.headerActions}>
+            <Box className={styles.headerActions}>
               {/* Book button with dropdown */}
-              {bookState.books.length > 0 || bookState.activeBook ? (
-                <>
-                  <Button
-                    variant="outlined"
-                    onClick={handleOpenBookMenu}
-                    startIcon={<MenuBookIcon />}
-                    endIcon={<ArrowDropDownIcon />}
-                    className={`${styles.actionButton} ${styles.bookButton} ${bookState.activeBook ? styles.bookButtonActive : ''}`}
-                  >
-                    {bookState.activeBook ? (
-                      <>
-                        {bookState.activeBook.title}
-                        <Chip
-                          label={bookState.activeBook.writingIds.length}
-                          size="small"
-                          sx={{
-                            ml: 1,
-                            height: 20,
-                            minWidth: 20,
-                            bgcolor: 'var(--color-secondary)',
-                            color: 'white',
-                            fontSize: 'var(--font-size-xs)',
-                            fontWeight: 600,
-                          }}
-                        />
-                      </>
-                    ) : (
-                      'Kitap Seç'
-                    )}
-                  </Button>
-                  <Menu
-                    anchorEl={bookMenuAnchor}
-                    open={Boolean(bookMenuAnchor)}
-                    onClose={handleCloseBookMenu}
-                    PaperProps={{
-                      sx: {
-                        borderRadius: 'var(--radius-md)',
-                        minWidth: 200,
-                        mt: 1,
-                      },
-                    }}
-                  >
-                    {/* Edit current book option */}
-                    {bookState.activeBook && (
-                      <MenuItem onClick={handleNavigateToBook}>
-                        <ListItemIcon>
-                          <MenuBookIcon fontSize="small" sx={{ color: 'var(--color-secondary)' }} />
-                        </ListItemIcon>
-                        <ListItemText primary="Kitabı Düzenle" />
-                      </MenuItem>
-                    )}
-                    {/* Print current book option */}
-                    {bookState.activeBook && (
-                      <MenuItem 
-                        onClick={handlePrintBook}
-                        disabled={isGeneratingPdf || bookWritings.length === 0}
-                      >
-                        <ListItemIcon>
-                          <PictureAsPdfIcon fontSize="small" sx={{ color: 'var(--color-secondary)' }} />
-                        </ListItemIcon>
-                        <ListItemText primary={isGeneratingPdf ? "PDF Oluşturuluyor..." : "Kitabı Yazdır"} />
-                      </MenuItem>
-                    )}
-                    {bookState.activeBook && bookState.books.length > 0 && <Divider />}
-                    
-                    {/* List of books */}
-                    {bookState.books
-                      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                      .map((book) => (
-                        <MenuItem
-                          key={book.id}
-                          onClick={() => handleSelectBook(book.id)}
-                          selected={bookState.activeBook?.id === book.id}
+              <Box className={styles.bookButtonWrapper}>
+                {bookState.books.length > 0 || bookState.activeBook ? (
+                  <>
+                    <Button
+                      variant="outlined"
+                      onClick={handleOpenBookMenu}
+                      startIcon={<MenuBookIcon />}
+                      endIcon={<ArrowDropDownIcon />}
+                      className={`${styles.actionButton} ${styles.bookButton} ${bookState.activeBook ? styles.bookButtonActive : ''}`}
+                    >
+                      {bookState.activeBook ? (
+                        <>
+                          {bookState.activeBook.title}
+                          <Chip
+                            label={bookState.activeBook.writingIds.length}
+                            size="small"
+                            sx={{
+                              ml: 1,
+                              height: 20,
+                              minWidth: 20,
+                              bgcolor: 'var(--color-secondary)',
+                              color: 'white',
+                              fontSize: 'var(--font-size-xs)',
+                              fontWeight: 600,
+                            }}
+                          />
+                        </>
+                      ) : (
+                        'Kitap Seç'
+                      )}
+                    </Button>
+                    <Menu
+                      anchorEl={bookMenuAnchor}
+                      open={Boolean(bookMenuAnchor)}
+                      onClose={handleCloseBookMenu}
+                      PaperProps={{
+                        sx: {
+                          borderRadius: 'var(--radius-md)',
+                          minWidth: 200,
+                          mt: 1,
+                        },
+                      }}
+                    >
+                      {/* Edit current book option */}
+                      {bookState.activeBook && (
+                        <MenuItem onClick={handleNavigateToBook}>
+                          <ListItemIcon>
+                            <MenuBookIcon fontSize="small" sx={{ color: 'var(--color-secondary)' }} />
+                          </ListItemIcon>
+                          <ListItemText primary="Kitabı Düzenle" />
+                        </MenuItem>
+                      )}
+                      {/* Print current book option */}
+                      {bookState.activeBook && (
+                        <MenuItem 
+                          onClick={handlePrintBook}
+                          disabled={isGeneratingPdf || bookWritings.length === 0}
                         >
                           <ListItemIcon>
-                            {bookState.activeBook?.id === book.id ? (
-                              <CheckIcon fontSize="small" sx={{ color: 'var(--color-secondary)' }} />
-                            ) : (
-                              <Box sx={{ width: 20 }} />
-                            )}
+                            <PictureAsPdfIcon fontSize="small" sx={{ color: 'var(--color-secondary)' }} />
                           </ListItemIcon>
-                          <ListItemText 
-                            primary={book.title} 
-                            secondary={`${book.writingCount} yazı`}
-                          />
+                          <ListItemText primary={isGeneratingPdf ? "PDF Oluşturuluyor..." : "Kitabı Yazdır"} />
                         </MenuItem>
-                      ))}
-                    
-                    <Divider />
-                    
-                    {/* Create new book option */}
-                    <MenuItem onClick={handleCreateNewBookFromMenu}>
-                      <ListItemIcon>
-                        <AddIcon fontSize="small" />
-                      </ListItemIcon>
-                      <ListItemText primary="Yeni Kitap Oluştur" />
-                    </MenuItem>
-                  </Menu>
-                </>
-              ) : (
+                      )}
+                      {bookState.activeBook && bookState.books.length > 0 && <Divider />}
+                      
+                      {/* List of books */}
+                      {bookState.books
+                        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                        .map((book) => (
+                          <MenuItem
+                            key={book.id}
+                            onClick={() => handleSelectBook(book.id)}
+                            selected={bookState.activeBook?.id === book.id}
+                          >
+                            <ListItemIcon>
+                              {bookState.activeBook?.id === book.id ? (
+                                <CheckIcon fontSize="small" sx={{ color: 'var(--color-secondary)' }} />
+                              ) : (
+                                <Box sx={{ width: 20 }} />
+                              )}
+                            </ListItemIcon>
+                            <ListItemText 
+                              primary={book.title} 
+                              secondary={`${book.writingCount} yazı`}
+                            />
+                          </MenuItem>
+                        ))}
+                      
+                      <Divider />
+                      
+                      {/* Create new book option */}
+                      <MenuItem onClick={handleCreateNewBookFromMenu}>
+                        <ListItemIcon>
+                          <AddIcon fontSize="small" />
+                        </ListItemIcon>
+                        <ListItemText primary="Yeni Kitap Oluştur" />
+                      </MenuItem>
+                    </Menu>
+                  </>
+                ) : (
+                  <Button
+                    variant="outlined"
+                    onClick={handleOpenBookDialog}
+                    startIcon={<MenuBookIcon />}
+                    className={`${styles.actionButton} ${styles.bookButton}`}
+                  >
+                    <span className={styles.buttonText}>Oluştur</span>
+                  </Button>
+                )}
+              </Box>
+              
+              {/* New writing buttons */}
+              <Stack direction="row" spacing={1} className={styles.newWritingButtons}>
                 <Button
-                  variant="outlined"
-                  onClick={handleOpenBookDialog}
-                  startIcon={<MenuBookIcon />}
-                  className={`${styles.actionButton} ${styles.bookButton}`}
+                  variant="contained"
+                  onClick={() => handleCreateWriting('siir')}
+                  startIcon={<AutoStoriesIcon />}
+                  className={styles.actionButton}
+                  sx={{
+                    bgcolor: 'var(--color-secondary)',
+                    color: 'white',
+                    '&:hover': { bgcolor: 'var(--color-secondary-hover)' },
+                  }}
                 >
-                  <span className={styles.buttonText}>Oluştur</span>
+                  <span className={styles.buttonText}>Yeni Şiir</span>
                 </Button>
-              )}
-              <Button
-                variant="contained"
-                onClick={() => handleCreateWriting('siir')}
-                startIcon={<AutoStoriesIcon />}
-                className={styles.actionButton}
-                sx={{
-                  bgcolor: 'var(--color-secondary)',
-                  color: 'white',
-                  '&:hover': { bgcolor: 'var(--color-secondary-hover)' },
-                }}
-              >
-                <span className={styles.buttonText}>Yeni Şiir</span>
-              </Button>
-              <Button
-                variant="contained"
-                onClick={() => handleCreateWriting('yazi')}
-                startIcon={<EditNoteIcon />}
-                className={styles.actionButton}
-                sx={{
-                  bgcolor: 'var(--color-primary)',
-                  color: 'white',
-                  '&:hover': { bgcolor: 'var(--color-primary-hover)' },
-                }}
-              >
-                <span className={styles.buttonText}>Yeni Yazı</span>
-              </Button>
-            </Stack>
+                <Button
+                  variant="contained"
+                  onClick={() => handleCreateWriting('yazi')}
+                  startIcon={<EditNoteIcon />}
+                  className={styles.actionButton}
+                  sx={{
+                    bgcolor: 'var(--color-primary)',
+                    color: 'white',
+                    '&:hover': { bgcolor: 'var(--color-primary-hover)' },
+                  }}
+                >
+                  <span className={styles.buttonText}>Yeni Yazı</span>
+                </Button>
+              </Stack>
+            </Box>
           </Box>
         </Container>
       </Box>

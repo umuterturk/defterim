@@ -74,9 +74,19 @@
 
 .headerActions {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 0.5rem;
-  align-items: center;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.bookButtonWrapper {
+  display: flex;
+}
+
+.newWritingButtons {
+  display: flex;
+  flex-direction: row;
 }
 
 /* Filter chips container - horizontal scroll on mobile */
@@ -260,7 +270,10 @@
   }
   
   .headerActions {
+    flex-direction: row;
+    align-items: center;
     margin-left: auto;
+    width: auto;
   }
   
   .actionButton {
