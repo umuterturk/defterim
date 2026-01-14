@@ -6,9 +6,20 @@ import App from './App.tsx'
 // Make right-click behave like left-click throughout the app
 // This helps users who sometimes mix up right and left clicks
 document.addEventListener('contextmenu', (event) => {
-  event.preventDefault();
-  
   const target = event.target as HTMLElement;
+  
+  // Allow native context menu for text inputs (for copy/paste functionality)
+  const isTextInput = 
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'INPUT' ||
+    target.isContentEditable ||
+    target.closest('[contenteditable="true"]');
+  
+  if (isTextInput) {
+    return; // Allow default context menu
+  }
+  
+  event.preventDefault();
   
   // Create and dispatch a click event with the same properties
   const clickEvent = new MouseEvent('click', {
