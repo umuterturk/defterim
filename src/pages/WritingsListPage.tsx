@@ -436,7 +436,7 @@ export function WritingsListPage() {
                   className={styles.actionButton}
                   sx={SIIR_BUTTON_SX}
                 >
-                  <span className={styles.buttonText}>Yeni Şiir</span>
+                  <span className={styles.buttonText}>Şiir Yaz</span>
                 </Button>
                 <Button
                   variant="contained"
@@ -445,7 +445,7 @@ export function WritingsListPage() {
                   className={styles.actionButton}
                   sx={YAZI_BUTTON_SX}
                 >
-                  <span className={styles.buttonText}>Yeni Yazı</span>
+                  <span className={styles.buttonText}>Yazı Yaz</span>
                 </Button>
               </Stack>
             </Box>

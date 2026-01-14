@@ -1,7 +1,7 @@
 import { memo, useCallback, useState } from 'react';
 import { IconButton, Tooltip, Snackbar } from '@mui/material';
-import MenuBookIcon from '@mui/icons-material/MenuBook';
-import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
+import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
+import LibraryAddIcon from '@mui/icons-material/LibraryAdd';
 import { useBook } from '../contexts/BookContext';
 
 interface BookToggleButtonProps {
@@ -45,28 +45,52 @@ function BookToggleButtonComponent({ writingId, size = 'small' }: BookToggleButt
       <Tooltip 
         title={isInBook ? 'Kitaptan çıkar' : 'Kitaba ekle'} 
         arrow
+        slotProps={{
+          tooltip: {
+            sx: {
+              fontSize: '1rem',
+              fontWeight: 500,
+              padding: '8px 14px',
+              bgcolor: '#333',
+            },
+          },
+          arrow: {
+            sx: {
+              color: '#333',
+            },
+          },
+        }}
       >
         <IconButton
           onClick={handleToggle}
-          size={size}
+          size="medium"
           sx={{
-            color: isInBook ? '#7B5EA7' : '#999',
+            color: isInBook ? '#e57373' : '#4A7C59',
+            padding: '10px',
+            borderRadius:  '8px',
+            bgcolor: isInBook ? 'rgba(229, 115, 115, 0.1)' : 'rgba(74, 124, 89, 0.1)',
+            border: isInBook ? '2px solid #e57373' : '2px solid #4A7C59',
+            transition: 'all 0.25s ease-in-out',
             '&:hover': {
-              color: isInBook ? '#6b4e97' : '#7B5EA7',
-              bgcolor: 'rgba(123, 94, 167, 0.08)',
+              color: isInBook ? '#e53935' : '#3d6b4a',
+              bgcolor: isInBook ? 'rgba(229, 57, 53, 0.15)' : 'rgba(74, 124, 89, 0.2)',
+              transform: 'scale(1.1)',
+            },
+            '& .MuiSvgIcon-root': {
+              fontSize: '1.5rem' ,
             },
           }}
         >
           {isInBook ? (
-            <MenuBookIcon fontSize={size} />
+            <RemoveCircleOutlineIcon />
           ) : (
-            <MenuBookOutlinedIcon fontSize={size} />
+            <LibraryAddIcon />
           )}
         </IconButton>
       </Tooltip>
       <Snackbar
         open={toastOpen}
-        autoHideDuration={2000}
+        autoHideDuration={5000}
         onClose={handleCloseToast}
         message={toastMessage}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
@@ -76,7 +100,8 @@ function BookToggleButtonComponent({ writingId, size = 'small' }: BookToggleButt
             color: 'white',
             borderRadius: 'var(--radius-md)',
             fontWeight: 500,
-            fontSize: 'var(--font-size-sm)',
+            fontSize: 'var(--font-size-md)',
+            padding: '10px 20px',
           },
         }}
       />

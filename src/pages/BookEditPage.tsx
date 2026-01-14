@@ -352,9 +352,12 @@ export function BookEditPage() {
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: '#F5F5F0', display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
+      {/* Header - sticky at top */}
       <Box
         sx={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 100,
           bgcolor: 'white',
           borderBottom: '1px solid #ddd',
           px: 2,

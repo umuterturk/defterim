@@ -411,9 +411,12 @@ export function EditorPage() {
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: '#FFFFF8', display: 'flex', flexDirection: 'column' }}>
-      {/* Toolbar */}
+      {/* Toolbar - sticky at top */}
       <Box
         sx={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 100,
           bgcolor: 'white',
           borderBottom: '1px solid #ddd',
           px: 2,
