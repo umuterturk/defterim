@@ -309,13 +309,12 @@ export async function generateBookPdf(
     <BookPdfDocument book={book} writings={writingsWithContent} author={author} />
   ).toBlob();
 
-  // Create download link
+  // Open PDF in new window/tab
   const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `${book.title.replace(/[^a-zA-Z0-9ğüşıöçĞÜŞİÖÇ\s]/g, '')}.pdf`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  window.open(url, '_blank');
+  
+  // Clean up the blob URL after a delay (to allow the new tab to load)
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 5000);
 }
