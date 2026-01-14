@@ -112,6 +112,11 @@ interface WritingsContextType {
   isPendingWriting: (id: string) => boolean;
   discardPendingWriting: (id: string) => void;
   isAvailableOffline: (id: string) => boolean;
+  markAsOfflineAvailable: (id: string) => void;
+  /** Check if the cached body content contains the search query */
+  searchBodyContains: (id: string, query: string) => boolean;
+  /** Index body content for search (called when prefetching) */
+  indexBodyForSearch: (id: string, body: string) => void;
 }
 
 // Context
@@ -123,6 +128,8 @@ export function WritingsProvider({ children }: { children: ReactNode }) {
   const writingsCache = useRef<Map<string, Writing>>(new Map());
   // Track writings that are created but not yet saved to storage
   const pendingWritings = useRef<Set<string>>(new Set());
+  // Index of body content for full-text search (id -> lowercase body)
+  const bodySearchIndex = useRef<Map<string, string>>(new Map());
 
   // Initialize services
   useEffect(() => {
@@ -237,6 +244,8 @@ export function WritingsProvider({ children }: { children: ReactNode }) {
     // Cache it and mark as offline available
     if (writing) {
       writingsCache.current.set(id, writing);
+      // Index body for search
+      bodySearchIndex.current.set(id, writing.body.toLowerCase());
       // Mark this writing as available offline (body is now cached)
       dispatch({ type: 'ADD_OFFLINE_AVAILABLE', payload: id });
     }
@@ -265,6 +274,8 @@ export function WritingsProvider({ children }: { children: ReactNode }) {
 
     // Update cache
     writingsCache.current.set(writing.id, updatedWriting);
+    // Update search index with new body content
+    bodySearchIndex.current.set(writing.id, updatedWriting.body.toLowerCase());
 
     await localStorageService.saveWriting(updatedWriting);
 
@@ -295,11 +306,13 @@ export function WritingsProvider({ children }: { children: ReactNode }) {
     if (pendingWritings.current.has(id)) {
       pendingWritings.current.delete(id);
       writingsCache.current.delete(id);
+      bodySearchIndex.current.delete(id);
       return;
     }
 
-    // Remove from cache
+    // Remove from cache and search index
     writingsCache.current.delete(id);
+    bodySearchIndex.current.delete(id);
     
     // Optimistic update
     dispatch({ type: 'REMOVE_WRITING', payload: id });
@@ -329,6 +342,23 @@ export function WritingsProvider({ children }: { children: ReactNode }) {
     return state.offlineAvailableIds.has(id);
   }, [state.offlineAvailableIds]);
 
+  // Mark a writing as available offline (called after prefetching)
+  const markAsOfflineAvailable = useCallback((id: string): void => {
+    dispatch({ type: 'ADD_OFFLINE_AVAILABLE', payload: id });
+  }, []);
+
+  // Check if cached body content contains search query
+  const searchBodyContains = useCallback((id: string, query: string): boolean => {
+    const indexedBody = bodySearchIndex.current.get(id);
+    if (!indexedBody) return false;
+    return indexedBody.includes(query.toLowerCase());
+  }, []);
+
+  // Index body content for search (called when prefetching)
+  const indexBodyForSearch = useCallback((id: string, body: string): void => {
+    bodySearchIndex.current.set(id, body.toLowerCase());
+  }, []);
+
   // Memoize context value to prevent unnecessary re-renders of consumers
   const value = useMemo<WritingsContextType>(() => ({
     state,
@@ -341,6 +371,9 @@ export function WritingsProvider({ children }: { children: ReactNode }) {
     isPendingWriting,
     discardPendingWriting,
     isAvailableOffline,
+    markAsOfflineAvailable,
+    searchBodyContains,
+    indexBodyForSearch,
   }), [
     state,
     loadWritings,
@@ -352,6 +385,9 @@ export function WritingsProvider({ children }: { children: ReactNode }) {
     isPendingWriting,
     discardPendingWriting,
     isAvailableOffline,
+    markAsOfflineAvailable,
+    searchBodyContains,
+    indexBodyForSearch,
   ]);
 
   return (

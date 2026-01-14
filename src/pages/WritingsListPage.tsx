@@ -22,6 +22,7 @@ import BookOutlinedIcon from '@mui/icons-material/BookOutlined';
 import SearchOffIcon from '@mui/icons-material/SearchOff';
 import CloudSyncIcon from '@mui/icons-material/CloudSync';
 import { useWritings } from '../contexts/WritingsContext';
+import { usePrefetchVisibleWritings } from '../hooks/usePrefetchVisibleWritings';
 import { useBook } from '../contexts/BookContext';
 import { WritingCard } from '../components/WritingCard';
 import { TypeFilterChips } from '../components/TypeFilterChips';
@@ -111,7 +112,7 @@ const VirtualizedRow: RowComponent<ListRowProps> = memo(function VirtualizedRow(
 
 export function WritingsListPage() {
   const navigate = useNavigate();
-  const { state, createNewWriting, isAvailableOffline } = useWritings();
+  const { state, createNewWriting, isAvailableOffline, markAsOfflineAvailable, searchBodyContains, indexBodyForSearch } = useWritings();
   const { state: bookState, createNewBook, setActiveBook } = useBook();
   const isOnline = useOnlineStatus();
   const listRef = useListRef(null);
@@ -168,11 +169,12 @@ export function WritingsListPage() {
       result = result.filter((w) => w.type === deferredType);
     }
 
-    // Filter and sort by search query - title matches first, then preview matches
+    // Filter and sort by search query - title matches first, then preview, then full body
     if (deferredSearch) {
       const query = deferredSearch.toLowerCase();
       const titleMatches: WritingMetadata[] = [];
       const previewOnlyMatches: WritingMetadata[] = [];
+      const bodyOnlyMatches: WritingMetadata[] = [];
       
       for (const w of result) {
         const titleMatch = w.title.toLowerCase().includes(query);
@@ -182,14 +184,17 @@ export function WritingsListPage() {
           titleMatches.push(w);
         } else if (previewMatch) {
           previewOnlyMatches.push(w);
+        } else if (searchBodyContains(w.id, query)) {
+          // Search in full body content (if downloaded)
+          bodyOnlyMatches.push(w);
         }
       }
       
-      result = [...titleMatches, ...previewOnlyMatches];
+      result = [...titleMatches, ...previewOnlyMatches, ...bodyOnlyMatches];
     }
 
     return result;
-  }, [sortedWritings, deferredSearch, deferredType]);
+  }, [sortedWritings, deferredSearch, deferredType, searchBodyContains]);
 
   // Reset scroll position when filter/sort changes (but not on initial mount)
   useEffect(() => {
@@ -351,6 +356,28 @@ export function WritingsListPage() {
     isAvailableOffline,
     isOnline,
   }), [filteredWritings, handleOpenWriting, isAvailableOffline, isOnline]);
+
+  // Extract writing IDs for prefetch hook
+  const writingIds = useMemo(() => 
+    filteredWritings.map(w => w.id), 
+    [filteredWritings]
+  );
+
+  // Prefetch visible writings in background for offline availability and search
+  const prefetchCallbacks = useMemo(() => ({
+    onPrefetched: markAsOfflineAvailable,
+    onBodyIndexed: indexBodyForSearch,
+  }), [markAsOfflineAvailable, indexBodyForSearch]);
+
+  // Hook into scroll events to prefetch visible writings
+  usePrefetchVisibleWritings(
+    listRef,
+    writingIds,
+    state.offlineAvailableIds,
+    isOnline,
+    CARD_HEIGHT,
+    prefetchCallbacks
+  );
 
   // Loading state - initial load (wait until fully initialized)
   if (!state.isInitialized) {

@@ -65,6 +65,9 @@ function WritingCardComponent({ metadata, onTap, isAvailableOffline = true, isOn
 
   return (
     <Card className={cardClassName}>
+      {/* Book toggle button positioned absolutely - outside CardActionArea to avoid nested buttons */}
+      <BookToggleButton writingId={metadata.id} />
+      
       <CardActionArea 
         onClick={onTap}
         className={styles.cardActionArea}
@@ -97,8 +100,6 @@ function WritingCardComponent({ metadata, onTap, isAvailableOffline = true, isOn
             >
               {displayTitle}
             </Typography>
-            {/* Book toggle button - only shows when there's an active book */}
-            <BookToggleButton writingId={metadata.id} />
             {isUnavailable && (
               <Tooltip title="İnternete bağlı değilken kullanılamıyor" arrow>
                 <CloudOffOutlinedIcon className={styles.cloudIcon} />

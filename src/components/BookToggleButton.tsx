@@ -64,9 +64,14 @@ function BookToggleButtonComponent({ writingId }: BookToggleButtonProps) {
           onClick={handleToggle}
           size="medium"
           sx={{
+            // Position absolutely in top-right of card
+            position: 'absolute',
+            top: '8px',
+            right: '8px',
+            zIndex: 1,
             color: isInBook ? '#e57373' : '#4A7C59',
-            padding: '10px',
-            borderRadius:  '8px',
+            padding: '8px',
+            borderRadius: '8px',
             bgcolor: isInBook ? 'rgba(229, 115, 115, 0.1)' : 'rgba(74, 124, 89, 0.1)',
             border: isInBook ? '2px solid #e57373' : '2px solid #4A7C59',
             transition: 'all 0.25s ease-in-out',
@@ -76,7 +81,7 @@ function BookToggleButtonComponent({ writingId }: BookToggleButtonProps) {
               transform: 'scale(1.1)',
             },
             '& .MuiSvgIcon-root': {
-              fontSize: '1.5rem' ,
+              fontSize: '1.25rem',
             },
           }}
         >
