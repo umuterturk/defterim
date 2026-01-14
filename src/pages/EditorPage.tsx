@@ -449,7 +449,7 @@ export function EditorPage() {
         <Box sx={{ flex: 1 }} />
 
         {/* Book toggle button - only shows when there's an active book */}
-        <BookToggleButton writingId={writing.id} size="medium" />
+        <BookToggleButton writingId={writing.id} />
 
         {/* Delete button */}
         <IconButton onClick={handleShowDeleteDialog} sx={{ color: '#666' }}>

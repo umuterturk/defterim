@@ -98,7 +98,7 @@ function WritingCardComponent({ metadata, onTap, isAvailableOffline = true, isOn
               {displayTitle}
             </Typography>
             {/* Book toggle button - only shows when there's an active book */}
-            <BookToggleButton writingId={metadata.id} size="small" />
+            <BookToggleButton writingId={metadata.id} />
             {isUnavailable && (
               <Tooltip title="İnternete bağlı değilken kullanılamıyor" arrow>
                 <CloudOffOutlinedIcon className={styles.cloudIcon} />
