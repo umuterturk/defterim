@@ -6,10 +6,9 @@ import { useBook } from '../contexts/BookContext';
 
 interface BookToggleButtonProps {
   writingId: string;
-  size?: 'small' | 'medium';
 }
 
-function BookToggleButtonComponent({ writingId, size = 'small' }: BookToggleButtonProps) {
+function BookToggleButtonComponent({ writingId }: BookToggleButtonProps) {
   const { state, addWritingToBook, removeWritingFromBook, isWritingInActiveBook } = useBook();
   const [toastOpen, setToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
