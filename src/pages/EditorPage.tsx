@@ -598,7 +598,7 @@ export function EditorPage() {
         <Box sx={{ flex: 1 }} />
 
         {/* Book toggle button - only shows when there's an active book */}
-        <BookToggleButton writingId={writing.id} inToolbar showLabel />
+        <BookToggleButton writingId={writing.id} writingTitle={writing.title} inToolbar showLabel />
 
         {/* Delete button */}
         <Tooltip title="Yazıyı sil" arrow slotProps={tooltipSlotProps}>
@@ -767,11 +767,11 @@ export function EditorPage() {
         PaperProps={{ sx: { borderRadius: '12px' } }}
       >
         <DialogTitle sx={{ fontWeight: 600, fontSize: '24px' }}>
-          Yazıyı Sil
+          Yazı silinsin mi?
         </DialogTitle>
         <DialogContent>
           <DialogContentText sx={{ fontSize: '18px' }}>
-            "{writing.title || 'Başlıksız Yazı'}" yazısını silmek istediğinizden emin misiniz?
+            <strong>"{writing.title || 'Başlıksız Yazı'}"</strong> yazısını silmek istediğinizden emin misiniz?
           </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>

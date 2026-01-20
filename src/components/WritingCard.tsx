@@ -94,7 +94,7 @@ function WritingCardComponent({ metadata, onTap, isAvailableOffline = true, isOn
   return (
     <Card className={cardClassName}>
       {/* Book toggle button positioned absolutely - outside CardActionArea to avoid nested buttons */}
-      <BookToggleButton writingId={metadata.id} />
+      <BookToggleButton writingId={metadata.id} writingTitle={metadata.title} />
       
       <CardActionArea 
         onClick={onTap}

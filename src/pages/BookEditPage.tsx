@@ -190,6 +190,8 @@ export function BookEditPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [showRemoveWritingDialog, setShowRemoveWritingDialog] = useState(false);
+  const [writingToRemove, setWritingToRemove] = useState<string | null>(null);
 
   // DnD sensors
   const sensors = useSensors(
@@ -319,8 +321,22 @@ export function BookEditPage() {
   }, [bookState.activeBook, reorderWritings]);
 
   const handleRemoveWriting = useCallback((writingId: string) => {
-    removeWritingFromBook(writingId);
-  }, [removeWritingFromBook]);
+    setWritingToRemove(writingId);
+    setShowRemoveWritingDialog(true);
+  }, []);
+
+  const handleConfirmRemoveWriting = useCallback(() => {
+    if (writingToRemove) {
+      removeWritingFromBook(writingToRemove);
+    }
+    setShowRemoveWritingDialog(false);
+    setWritingToRemove(null);
+  }, [writingToRemove, removeWritingFromBook]);
+
+  const handleCancelRemoveWriting = useCallback(() => {
+    setShowRemoveWritingDialog(false);
+    setWritingToRemove(null);
+  }, []);
 
   const handleNavigateToWriting = useCallback((writingId: string) => {
     // Save scroll position before navigating
@@ -639,11 +655,11 @@ export function BookEditPage() {
         PaperProps={{ sx: { borderRadius: '12px' } }}
       >
         <DialogTitle sx={{ fontWeight: 600, fontSize: '24px' }}>
-          Kitabı Sil
+          Kitap silinsin mi?
         </DialogTitle>
         <DialogContent>
           <DialogContentText sx={{ fontSize: '18px' }}>
-            "{bookState.activeBook.title}" kitabını silmek istediğinizden emin misiniz?
+            <strong>"{bookState.activeBook.title}"</strong> kitabını silmek istediğinizden emin misiniz?
             <br />
             <Typography component="span" sx={{ color: '#666', fontSize: '14px' }}>
               Not: Yazılarınız silinmez, sadece kitap silinir.
@@ -660,6 +676,34 @@ export function BookEditPage() {
             sx={{ fontWeight: 600, fontSize: '16px' }}
           >
             Sil
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Remove writing confirmation dialog */}
+      <Dialog
+        open={showRemoveWritingDialog}
+        onClose={handleCancelRemoveWriting}
+        PaperProps={{ sx: { borderRadius: '12px' } }}
+      >
+        <DialogTitle sx={{ fontWeight: 600, fontSize: '20px' }}>
+          Kitaptan çıkarılsın mı?
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ fontSize: '16px' }}>
+            <strong>"{bookWritings.find(w => w.id === writingToRemove)?.title || 'Bu yazı'}"</strong> yazısını <strong>"{bookState.activeBook.title}"</strong> kitabından çıkarmak istediğinizden emin misiniz?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={handleCancelRemoveWriting} sx={{ fontSize: '16px' }}>
+            İptal
+          </Button>
+          <Button
+            onClick={handleConfirmRemoveWriting}
+            color="error"
+            sx={{ fontWeight: 600, fontSize: '16px' }}
+          >
+            Çıkar
           </Button>
         </DialogActions>
       </Dialog>

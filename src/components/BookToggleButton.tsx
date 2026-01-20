@@ -1,38 +1,73 @@
 import { memo, useCallback, useState } from 'react';
-import { IconButton, Button, Tooltip, Snackbar } from '@mui/material';
+import {
+  IconButton,
+  Button,
+  Tooltip,
+  Snackbar,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+} from '@mui/material';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import LibraryAddIcon from '@mui/icons-material/LibraryAdd';
 import { useBook } from '../contexts/BookContext';
 
 interface BookToggleButtonProps {
   writingId: string;
+  /** Writing title for confirmation dialog */
+  writingTitle?: string;
   /** When true, uses normal flow positioning instead of absolute (for toolbar usage) */
   inToolbar?: boolean;
   /** When true, shows text label alongside the icon */
   showLabel?: boolean;
 }
 
-function BookToggleButtonComponent({ writingId, inToolbar = false, showLabel = false }: BookToggleButtonProps) {
+function BookToggleButtonComponent({ writingId, writingTitle, inToolbar = false, showLabel = false }: BookToggleButtonProps) {
   const { state, addWritingToBook, removeWritingFromBook, isWritingInActiveBook } = useBook();
   const [toastOpen, setToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  const [showRemoveDialog, setShowRemoveDialog] = useState(false);
+  const [showAddDialog, setShowAddDialog] = useState(false);
 
   const isInBook = isWritingInActiveBook(writingId);
 
-  const handleToggle = useCallback(async (e: React.MouseEvent) => {
+  const handleToggle = useCallback((e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent card click
     
-    const bookTitle = state.activeBook?.title || 'Kitap';
-    
     if (isInBook) {
-      await removeWritingFromBook(writingId);
-      setToastMessage(`"${bookTitle}" kitabından çıkarıldı`);
+      // Show confirmation dialog before removing
+      setShowRemoveDialog(true);
     } else {
-      await addWritingToBook(writingId);
-      setToastMessage(`"${bookTitle}" kitabına eklendi`);
+      // Show confirmation dialog before adding
+      setShowAddDialog(true);
     }
+  }, [isInBook]);
+
+  const handleConfirmAdd = useCallback(async () => {
+    const bookTitle = state.activeBook?.title || 'Kitap';
+    await addWritingToBook(writingId);
+    setShowAddDialog(false);
+    setToastMessage(`"${bookTitle}" kitabına eklendi`);
     setToastOpen(true);
-  }, [isInBook, writingId, addWritingToBook, removeWritingFromBook, state.activeBook?.title]);
+  }, [writingId, addWritingToBook, state.activeBook?.title]);
+
+  const handleCancelAdd = useCallback(() => {
+    setShowAddDialog(false);
+  }, []);
+
+  const handleConfirmRemove = useCallback(async () => {
+    const bookTitle = state.activeBook?.title || 'Kitap';
+    await removeWritingFromBook(writingId);
+    setShowRemoveDialog(false);
+    setToastMessage(`"${bookTitle}" kitabından çıkarıldı`);
+    setToastOpen(true);
+  }, [writingId, removeWritingFromBook, state.activeBook?.title]);
+
+  const handleCancelRemove = useCallback(() => {
+    setShowRemoveDialog(false);
+  }, []);
 
   const handleCloseToast = useCallback(() => {
     setToastOpen(false);
@@ -59,6 +94,89 @@ function BookToggleButtonComponent({ writingId, inToolbar = false, showLabel = f
       },
     },
   };
+
+  const bookTitle = state.activeBook?.title || 'Kitap';
+
+  // Shared snackbar component
+  const snackbar = (
+    <Snackbar
+      open={toastOpen}
+      autoHideDuration={5000}
+      onClose={handleCloseToast}
+      message={toastMessage}
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      sx={{
+        '& .MuiSnackbarContent-root': {
+          bgcolor: '#333',
+          color: 'white',
+          borderRadius: 'var(--radius-md)',
+          fontWeight: 500,
+          fontSize: 'var(--font-size-md)',
+          padding: '10px 20px',
+        },
+      }}
+    />
+  );
+
+  // Add confirmation dialog
+  const addDialog = (
+    <Dialog
+      open={showAddDialog}
+      onClose={handleCancelAdd}
+      PaperProps={{ sx: { borderRadius: '12px' } }}
+    >
+      <DialogTitle sx={{ fontWeight: 600, fontSize: '20px' }}>
+        Kitaba eklensin mi?
+      </DialogTitle>
+      <DialogContent>
+        <DialogContentText sx={{ fontSize: '16px' }}>
+          <strong>"{writingTitle || 'Bu yazı'}"</strong> yazısını <strong>"{bookTitle}"</strong> kitabına eklemek istediğinizden emin misiniz?
+        </DialogContentText>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={handleCancelAdd} sx={{ fontSize: '16px' }}>
+          İptal
+        </Button>
+        <Button
+          onClick={handleConfirmAdd}
+          color="primary"
+          sx={{ fontWeight: 600, fontSize: '16px', color: '#4A7C59' }}
+        >
+          Ekle
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+
+  // Remove confirmation dialog
+  const removeDialog = (
+    <Dialog
+      open={showRemoveDialog}
+      onClose={handleCancelRemove}
+      PaperProps={{ sx: { borderRadius: '12px' } }}
+    >
+      <DialogTitle sx={{ fontWeight: 600, fontSize: '20px' }}>
+        Kitaptan çıkarılsın mı?
+      </DialogTitle>
+      <DialogContent>
+        <DialogContentText sx={{ fontSize: '16px' }}>
+          <strong>"{writingTitle || 'Bu yazı'}"</strong> yazısını <strong>"{bookTitle}"</strong> kitabından çıkarmak istediğinizden emin misiniz?
+        </DialogContentText>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={handleCancelRemove} sx={{ fontSize: '16px' }}>
+          İptal
+        </Button>
+        <Button
+          onClick={handleConfirmRemove}
+          color="error"
+          sx={{ fontWeight: 600, fontSize: '16px' }}
+        >
+          Çıkar
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
 
   // Button with label for explicit display (e.g., in editor toolbar)
   if (showLabel) {
@@ -90,23 +208,9 @@ function BookToggleButtonComponent({ writingId, inToolbar = false, showLabel = f
             {isInBook ? 'Kitaptan çıkar' : 'Kitaba ekle'}
           </Button>
         </Tooltip>
-        <Snackbar
-          open={toastOpen}
-          autoHideDuration={5000}
-          onClose={handleCloseToast}
-          message={toastMessage}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-          sx={{
-            '& .MuiSnackbarContent-root': {
-              bgcolor: '#333',
-              color: 'white',
-              borderRadius: 'var(--radius-md)',
-              fontWeight: 500,
-              fontSize: 'var(--font-size-md)',
-              padding: '10px 20px',
-            },
-          }}
-        />
+        {snackbar}
+        {addDialog}
+        {removeDialog}
       </>
     );
   }
@@ -149,23 +253,9 @@ function BookToggleButtonComponent({ writingId, inToolbar = false, showLabel = f
           )}
         </IconButton>
       </Tooltip>
-      <Snackbar
-        open={toastOpen}
-        autoHideDuration={5000}
-        onClose={handleCloseToast}
-        message={toastMessage}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        sx={{
-          '& .MuiSnackbarContent-root': {
-            bgcolor: '#333',
-            color: 'white',
-            borderRadius: 'var(--radius-md)',
-            fontWeight: 500,
-            fontSize: 'var(--font-size-md)',
-            padding: '10px 20px',
-          },
-        }}
-      />
+      {snackbar}
+      {addDialog}
+      {removeDialog}
     </>
   );
 }
