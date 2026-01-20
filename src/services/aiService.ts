@@ -10,9 +10,79 @@ Kurallar:
 - Şiir ve manzum metinlerde satır yapısını koru
 - Sadece düzeltilmiş metni döndür, açıklama ekleme
 - Metin düz metin olarak döndür, markdown kullanma
+- SADECE düzeltilmiş metni döndür, başka hiçbir şey ekleme (özet, açıklama vb.)
+- METNİN TAMAMINI DÖNDÜR, kısaltma veya kesme yapma
 
 Düzeltilecek metin:
 `;
+
+// Guardrail thresholds
+const MIN_LENGTH_RATIO = 0.7; // Corrected text must be at least 70% of original length
+const MIN_LINE_RATIO = 0.8; // Corrected text must have at least 80% of original line count
+
+/**
+ * Validate that the AI response is complete and not truncated
+ */
+function validateResponse(
+  originalText: string,
+  correctedText: string,
+  finishReason: string | undefined
+): { valid: boolean; error?: string } {
+  // Check 1: Verify finish reason - if not "STOP", response may be incomplete
+  if (finishReason && finishReason !== 'STOP') {
+    if (finishReason === 'MAX_TOKENS') {
+      return {
+        valid: false,
+        error: 'AI yanıtı tamamlanamadı (metin çok uzun). Lütfen daha kısa bir metin deneyin.',
+      };
+    }
+    if (finishReason === 'SAFETY') {
+      return {
+        valid: false,
+        error: 'AI içerik güvenlik filtresine takıldı. Lütfen metni kontrol edin.',
+      };
+    }
+    // Other unexpected finish reasons
+    console.warn('Unexpected finish reason:', finishReason);
+  }
+
+  const originalLength = originalText.trim().length;
+  const correctedLength = correctedText.trim().length;
+
+  // Check 2: Length ratio - corrected text shouldn't be much shorter
+  // (spelling corrections don't significantly reduce text length)
+  if (originalLength > 100) { // Only check for non-trivial texts
+    const lengthRatio = correctedLength / originalLength;
+    if (lengthRatio < MIN_LENGTH_RATIO) {
+      console.error(
+        `Content loss detected: original=${originalLength}, corrected=${correctedLength}, ratio=${lengthRatio.toFixed(2)}`
+      );
+      return {
+        valid: false,
+        error: `AI yanıtı eksik görünüyor (orijinalin %${Math.round(lengthRatio * 100)}'i). İçerik kaybını önlemek için işlem iptal edildi.`,
+      };
+    }
+  }
+
+  // Check 3: Line count comparison - should be similar
+  const originalLines = originalText.trim().split('\n').length;
+  const correctedLines = correctedText.trim().split('\n').length;
+
+  if (originalLines > 3) { // Only check for multi-line texts
+    const lineRatio = correctedLines / originalLines;
+    if (lineRatio < MIN_LINE_RATIO) {
+      console.error(
+        `Line count mismatch: original=${originalLines}, corrected=${correctedLines}, ratio=${lineRatio.toFixed(2)}`
+      );
+      return {
+        valid: false,
+        error: `AI yanıtında satır eksikliği tespit edildi (${originalLines} satırdan ${correctedLines} satıra düştü). İçerik kaybını önlemek için işlem iptal edildi.`,
+      };
+    }
+  }
+
+  return { valid: true };
+}
 
 const API_KEY_STORAGE_KEY = 'defterim_gemini_api_key';
 
@@ -89,7 +159,7 @@ export async function correctWriting(text: string): Promise<AiCorrectionResult> 
         ],
         generationConfig: {
           temperature: 0.0, // Zero temperature for maximum consistency in corrections
-          maxOutputTokens: 8192,
+          maxOutputTokens: 16384,
         },
       }),
     });
@@ -119,12 +189,35 @@ export async function correctWriting(text: string): Promise<AiCorrectionResult> 
     }
 
     const data = await response.json();
-    const correctedText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!correctedText) {
+    const candidate = data?.candidates?.[0];
+    const parts = candidate?.content?.parts;
+    const finishReason = candidate?.finishReason;
+    
+    if (!parts || parts.length === 0) {
       return {
         success: false,
         error: 'AI yanıt vermedi. Lütfen tekrar deneyin.',
+      };
+    }
+
+    // Concatenate all parts - Gemini can return long responses split across multiple parts
+    const correctedText = parts
+      .map((part: { text?: string }) => part.text || '')
+      .join('');
+
+    if (!correctedText.trim()) {
+      return {
+        success: false,
+        error: 'AI yanıt vermedi. Lütfen tekrar deneyin.',
+      };
+    }
+
+    // GUARDRAIL: Validate response completeness before returning
+    const validation = validateResponse(text, correctedText, finishReason);
+    if (!validation.valid) {
+      return {
+        success: false,
+        error: validation.error,
       };
     }
 
