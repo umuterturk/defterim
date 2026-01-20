@@ -3,11 +3,12 @@ import { Button, Stack, Typography } from '@mui/material';
 import SortByAlphaIcon from '@mui/icons-material/SortByAlpha';
 import UpdateIcon from '@mui/icons-material/Update';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
+import StarIcon from '@mui/icons-material/Star';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import styles from './SortButtons.module.css';
 
-export type SortType = 'alphabetic' | 'lastUpdated' | 'created';
+export type SortType = 'alphabetic' | 'lastUpdated' | 'created' | 'stars';
 
 interface SortButtonsProps {
   sortType: SortType;
@@ -25,6 +26,7 @@ const sortOptions: SortOption[] = [
   { type: 'alphabetic', label: 'Başlık', icon: <SortByAlphaIcon fontSize="small" /> },
   { type: 'lastUpdated', label: 'Güncelleme', icon: <UpdateIcon fontSize="small" /> },
   { type: 'created', label: 'Oluşturma', icon: <CalendarTodayIcon fontSize="small" /> },
+  { type: 'stars', label: 'Puan', icon: <StarIcon fontSize="small" sx={{ color: '#FFB800' }} /> },
 ];
 
 // Individual sort button - memoized for performance

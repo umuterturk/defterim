@@ -154,6 +154,7 @@ export function WritingsListPage() {
       alphabetic: (a, b) => (a.title || 'başlıksız').localeCompare(b.title || 'başlıksız', 'tr'),
       lastUpdated: (a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime(),
       created: (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      stars: (a, b) => (a.stars ?? 0) - (b.stars ?? 0),
     };
     
     writings.sort(compareFns[deferredSortType]);
@@ -261,6 +262,7 @@ export function WritingsListPage() {
       setSortAscending(!sortAscending);
     } else {
       setSortType(type);
+      // Alphabetic: A-Z first (ascending), Stars: highest first (descending), Dates: newest first (descending)
       setSortAscending(type === 'alphabetic');
     }
   }, [sortType, sortAscending]);
