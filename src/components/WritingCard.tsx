@@ -9,7 +9,35 @@ import {
   Tooltip,
 } from '@mui/material';
 import CloudOffOutlinedIcon from '@mui/icons-material/CloudOffOutlined';
+import StarIcon from '@mui/icons-material/Star';
 import type { WritingMetadata } from '../types/writing';
+
+// Turkish labels for star ratings
+const STAR_LABELS: Record<number, string> = {
+  1: 'Geçer',
+  2: 'Orta',
+  3: 'İyi',
+  4: 'Teşekkür',
+  5: 'Takdir',
+};
+
+// Large tooltip styling for elderly users
+const tooltipSlotProps = {
+  tooltip: {
+    sx: {
+      fontSize: '1rem',
+      fontWeight: 500,
+      padding: '8px 14px',
+      borderRadius: '8px',
+      backgroundColor: 'rgba(50, 50, 50, 0.95)',
+    },
+  },
+  arrow: {
+    sx: {
+      color: 'rgba(50, 50, 50, 0.95)',
+    },
+  },
+};
 import { writingTypeDisplayName } from '../types/writing';
 import { WRITING_TYPE_ICONS, WRITING_TYPE_COLORS } from '../config/writingTypes';
 import { BookToggleButton } from './BookToggleButton';
@@ -119,13 +147,28 @@ function WritingCardComponent({ metadata, onTap, isAvailableOffline = true, isOn
             <Box className={styles.previewPlaceholder} />
           )}
           
-          {/* Row 3: Date */}
-          <Typography
-            variant="caption"
-            className={dateClassName}
-          >
-            {formatDate(metadata.updatedAt)}
-          </Typography>
+          {/* Row 3: Date and Stars */}
+          <Box className={styles.dateRow}>
+            <Typography
+              variant="caption"
+              className={dateClassName}
+            >
+              {formatDate(metadata.updatedAt)}
+            </Typography>
+            {/* Show stars if rating exists */}
+            {(metadata.stars ?? 0) > 0 && (
+              <Tooltip title={STAR_LABELS[metadata.stars ?? 0]} arrow placement="top" slotProps={tooltipSlotProps}>
+                <Box className={styles.starsDisplay}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <StarIcon
+                      key={star}
+                      className={star <= (metadata.stars ?? 0) ? styles.starFilled : styles.starEmpty}
+                    />
+                  ))}
+                </Box>
+              </Tooltip>
+            )}
+          </Box>
         </CardContent>
       </CardActionArea>
     </Card>
@@ -143,6 +186,7 @@ function areEqual(prevProps: WritingCardProps, nextProps: WritingCardProps) {
     prev.preview === next.preview &&
     prev.updatedAt === next.updatedAt &&
     prev.type === next.type &&
+    prev.stars === next.stars &&
     prevProps.onTap === nextProps.onTap &&
     prevProps.isAvailableOffline === nextProps.isAvailableOffline &&
     prevProps.isOnline === nextProps.isOnline

@@ -22,6 +22,7 @@ import CloudOffIcon from '@mui/icons-material/CloudOff';
 import { useWritings } from '../contexts/WritingsContext';
 import { WritingTypeSelector } from '../components/WritingTypeSelector';
 import { BookToggleButton } from '../components/BookToggleButton';
+import { StarRating } from '../components/StarRating';
 import { OfflineIndicator } from '../components/OfflineIndicator';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import type { Writing, WritingType } from '../types/writing';
@@ -51,6 +52,7 @@ export function EditorPage() {
     body: string;
     footer: string;
     type: WritingType;
+    stars: number;
   } | null>(null);
 
   // Auto-save timer
@@ -86,6 +88,7 @@ export function EditorPage() {
           body: w.body,
           footer: w.footer,
           type: w.type,
+          stars: w.stars ?? 0,
         };
       } else if (!isOnline) {
         // Writing not found and we're offline - body not cached
@@ -117,6 +120,7 @@ export function EditorPage() {
             body: w.body,
             footer: w.footer,
             type: w.type,
+            stars: w.stars ?? 0,
           };
         } else {
           setLoadError('not_found');
@@ -133,7 +137,8 @@ export function EditorPage() {
       writing.title !== originalRef.current.title ||
       writing.body !== originalRef.current.body ||
       writing.footer !== originalRef.current.footer ||
-      writing.type !== originalRef.current.type
+      writing.type !== originalRef.current.type ||
+      (writing.stars ?? 0) !== originalRef.current.stars
     );
   }, [writing]);
 
@@ -177,6 +182,7 @@ export function EditorPage() {
         body: writing.body,
         footer: writing.footer,
         type: writing.type,
+        stars: writing.stars ?? 0,
       };
       
       if (isMountedRef.current) {
@@ -251,6 +257,29 @@ export function EditorPage() {
       originalRef.current = {
         ...originalRef.current!,
         type,
+      };
+    }
+  }, [writing, saveWriting]);
+
+  // Handle star rating change (save immediately if valid)
+  const handleStarsChange = useCallback(async (stars: number) => {
+    if (!writing) return;
+    const updated = { ...writing, stars };
+    setWriting(updated);
+    
+    // Only save immediately if the writing is valid
+    if (isValidForSave(updated)) {
+      await saveWriting(updated);
+      originalRef.current = {
+        ...originalRef.current!,
+        stars,
+      };
+      setHasUnsavedChanges(false);
+    } else {
+      // Just update the original stars reference for change detection
+      originalRef.current = {
+        ...originalRef.current!,
+        stars,
       };
     }
   }, [writing, saveWriting]);
@@ -446,10 +475,19 @@ export function EditorPage() {
           onTypeChange={handleTypeChange}
         />
 
+        {/* Star rating - hide on very small screens */}
+        <Box sx={{ display: { xs: 'none', sm: 'flex' } }}>
+          <StarRating
+            value={writing.stars ?? 0}
+            onChange={handleStarsChange}
+            size="medium"
+          />
+        </Box>
+
         <Box sx={{ flex: 1 }} />
 
         {/* Book toggle button - only shows when there's an active book */}
-        <BookToggleButton writingId={writing.id} />
+        <BookToggleButton writingId={writing.id} inToolbar />
 
         {/* Delete button */}
         <IconButton onClick={handleShowDeleteDialog} sx={{ color: '#666' }}>
@@ -561,6 +599,25 @@ export function EditorPage() {
                 },
               }}
             />
+
+            {/* Star rating - shown in content area for better visibility on all screens */}
+            <Box
+              sx={{
+                mt: 4,
+                pt: 3,
+                borderTop: '1px solid #e0e0e0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <StarRating
+                value={writing.stars ?? 0}
+                onChange={handleStarsChange}
+                size="large"
+                showLabel
+              />
+            </Box>
           </Box>
         </Box>
       </Box>

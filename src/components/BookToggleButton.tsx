@@ -6,9 +6,11 @@ import { useBook } from '../contexts/BookContext';
 
 interface BookToggleButtonProps {
   writingId: string;
+  /** When true, uses normal flow positioning instead of absolute (for toolbar usage) */
+  inToolbar?: boolean;
 }
 
-function BookToggleButtonComponent({ writingId }: BookToggleButtonProps) {
+function BookToggleButtonComponent({ writingId, inToolbar = false }: BookToggleButtonProps) {
   const { state, addWritingToBook, removeWritingFromBook, isWritingInActiveBook } = useBook();
   const [toastOpen, setToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -64,11 +66,13 @@ function BookToggleButtonComponent({ writingId }: BookToggleButtonProps) {
           onClick={handleToggle}
           size="medium"
           sx={{
-            // Position absolutely in top-right of card
-            position: 'absolute',
-            top: '8px',
-            right: '8px',
-            zIndex: 1,
+            // Position absolutely in top-right of card (only when not in toolbar)
+            ...(inToolbar ? {} : {
+              position: 'absolute',
+              top: '8px',
+              right: '8px',
+              zIndex: 1,
+            }),
             color: isInBook ? '#e57373' : '#4A7C59',
             padding: '8px',
             borderRadius: '8px',

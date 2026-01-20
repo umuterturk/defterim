@@ -14,6 +14,7 @@ export interface Writing {
   textAlign: 'left' | 'center' | 'right';
   deletedAt?: string; // Soft-delete timestamp
   type: WritingType;
+  stars?: number; // 0-5 star rating (0 = no rating)
 }
 
 export interface WritingMetadata {
@@ -25,6 +26,7 @@ export interface WritingMetadata {
   isSynced: boolean;
   deletedAt?: string;
   type: WritingType;
+  stars?: number; // 0-5 star rating (0 = no rating)
 }
 
 export interface MetadataIndex {
@@ -34,7 +36,7 @@ export interface MetadataIndex {
 }
 
 // Current metadata schema version - increment when structure changes
-export const METADATA_INDEX_VERSION = 2;
+export const METADATA_INDEX_VERSION = 3;
 
 // Helper functions
 export const writingTypeDisplayName: Record<WritingType, string> = {
@@ -50,6 +52,7 @@ export function createWriting(params: {
   type?: WritingType;
   isBold?: boolean;
   textAlign?: 'left' | 'center' | 'right';
+  stars?: number;
 }): Writing {
   const now = new Date().toISOString();
   return {
@@ -63,6 +66,7 @@ export function createWriting(params: {
     isBold: params.isBold ?? false,
     textAlign: params.textAlign ?? 'left',
     type: params.type ?? 'siir',
+    stars: params.stars ?? 0,
   };
 }
 
@@ -93,6 +97,7 @@ export function metadataFromWriting(writing: Writing): WritingMetadata {
     isSynced: writing.isSynced,
     deletedAt: writing.deletedAt,
     type: writing.type,
+    stars: writing.stars ?? 0,
   };
 }
 

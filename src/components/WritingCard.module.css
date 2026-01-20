@@ -96,16 +96,39 @@
   flex: 1;
 }
 
-/* Row 3: Date */
+/* Row 3: Date and Stars */
+.dateRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  gap: 0.5rem;
+}
+
 .date {
   color: var(--color-text-hint);
-  display: block;
   font-size: var(--font-size-xs);
-  margin-top: auto;
 }
 
 .dateUnavailable {
   color: #bbb;
+}
+
+/* Stars display */
+.starsDisplay {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.starFilled {
+  color: #FFB800;
+  font-size: 16px !important;
+}
+
+.starEmpty {
+  color: #D0D0D0;
+  font-size: 16px !important;
 }
 
 .cloudIcon {
@@ -140,6 +163,11 @@
   .date {
     font-size: var(--font-size-xs);
   }
+  
+  .starFilled,
+  .starEmpty {
+    font-size: 18px !important;
+  }
 }
 
 /* Desktop */
@@ -158,5 +186,10 @@
   
   .title {
     font-size: var(--font-size-lg);
+  }
+  
+  .starFilled,
+  .starEmpty {
+    font-size: 20px !important;
   }
 }
