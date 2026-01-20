@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { WritingsProvider } from './contexts/WritingsContext';
 import { BookProvider } from './contexts/BookContext';
@@ -85,21 +85,18 @@ const theme = createTheme({
 });
 
 function App() {
-  // Use base path from Vite config for GitHub Pages deployment
-  const basename = import.meta.env.BASE_URL;
-  
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <WritingsProvider>
         <BookProvider>
-          <BrowserRouter basename={basename}>
+          <HashRouter>
             <Routes>
               <Route path="/" element={<WritingsListPage />} />
               <Route path="/editor/:id" element={<EditorPage />} />
               <Route path="/book/:id" element={<BookEditPage />} />
             </Routes>
-          </BrowserRouter>
+          </HashRouter>
         </BookProvider>
       </WritingsProvider>
     </ThemeProvider>
