@@ -32,7 +32,7 @@ export function EditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { getFullWriting, saveWriting, deleteWriting, isPendingWriting, discardPendingWriting } = useWritings();
+  const { state: { isInitialized }, getFullWriting, saveWriting, deleteWriting, isPendingWriting, discardPendingWriting } = useWritings();
   
   // Get return path from navigation state (if coming from book edit page)
   const returnTo = (location.state as { returnTo?: string } | null)?.returnTo || '/';
@@ -68,12 +68,12 @@ export function EditorPage() {
     };
   }, []);
 
-  // Load writing
+  // Load writing - wait for context to be initialized first
   useEffect(() => {
     let cancelled = false;
     
     const load = async () => {
-      if (!id) return;
+      if (!id || !isInitialized) return;
       
       setIsLoading(true);
       setLoadError(null);
@@ -105,11 +105,11 @@ export function EditorPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, getFullWriting, isOnline]);
+  }, [id, getFullWriting, isOnline, isInitialized]);
 
   // Retry loading when coming back online
   useEffect(() => {
-    if (isOnline && loadError === 'offline' && id) {
+    if (isOnline && loadError === 'offline' && id && isInitialized) {
       setLoadError(null);
       setIsLoading(true);
       getFullWriting(id).then((w) => {
@@ -128,7 +128,7 @@ export function EditorPage() {
         setIsLoading(false);
       });
     }
-  }, [isOnline, loadError, id, getFullWriting]);
+  }, [isOnline, loadError, id, getFullWriting, isInitialized]);
 
   // Check for changes - memoized
   const hasChanges = useMemo(() => {
@@ -607,15 +607,24 @@ export function EditorPage() {
                 pt: 3,
                 borderTop: '1px solid #e0e0e0',
                 display: 'flex',
+                flexDirection: 'column',
                 alignItems: 'center',
-                justifyContent: 'center',
+                gap: 1,
               }}
             >
+              <Typography
+                sx={{
+                  color: '#666',
+                  fontWeight: 500,
+                  fontSize: '1rem',
+                }}
+              >
+                Puan
+              </Typography>
               <StarRating
                 value={writing.stars ?? 0}
                 onChange={handleStarsChange}
                 size="large"
-                showLabel
               />
             </Box>
           </Box>

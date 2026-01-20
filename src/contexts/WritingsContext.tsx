@@ -223,18 +223,58 @@ export function WritingsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Get full writing (with body)
+  // Always fetches from Firebase first (when online) to ensure latest version
   const getFullWriting = useCallback(async (id: string): Promise<Writing | null> => {
+    // For pending writings (created but not saved), return from cache immediately
+    if (pendingWritings.current.has(id)) {
+      return writingsCache.current.get(id) || null;
+    }
+
+    // Always try to fetch from Firebase first when online
+    if (navigator.onLine) {
+      const firebaseWriting = await firebaseSyncService.fetchWritingFromFirebase(id);
+      
+      if (firebaseWriting) {
+        // Get local version for comparison
+        const localWriting = writingsCache.current.get(id) || await localStorageService.getFullWriting(id);
+        
+        // Use Firebase version if it's newer than local (or local doesn't exist)
+        const useFirebase = !localWriting || 
+          new Date(firebaseWriting.updatedAt) >= new Date(localWriting.updatedAt);
+        
+        if (useFirebase) {
+          // Firebase is newer or same - save to local storage
+          await localStorageService.saveWriting(firebaseWriting);
+          console.log(`Firebase: Fetched and cached body for "${firebaseWriting.title}"`);
+        }
+        
+        // Determine which version to use
+        const writing = useFirebase ? firebaseWriting : localWriting!;
+        
+        // Ensure stars field exists
+        const finalWriting = writing.stars === undefined
+          ? { ...writing, stars: (await localStorageService.getWritingMetadata(id))?.stars ?? 0 }
+          : writing;
+        
+        writingsCache.current.set(id, finalWriting);
+        bodySearchIndex.current.set(id, finalWriting.body.toLowerCase());
+        dispatch({ type: 'ADD_OFFLINE_AVAILABLE', payload: id });
+        return finalWriting;
+      }
+    }
+
+    // Fall back to local storage (offline or Firebase fetch failed)
     // Check cache first
     const cached = writingsCache.current.get(id);
     if (cached) {
       return cached;
     }
 
-    // Try local first
+    // Try local storage
     let writing = await localStorageService.getFullWriting(id);
 
-    // If not found locally, try to fetch from Firebase
-    if (!writing) {
+    // If not found locally and online, try to fetch from Firebase (legacy path)
+    if (!writing && navigator.onLine) {
       const metadata = await localStorageService.getWritingMetadata(id);
       if (metadata) {
         writing = await firebaseSyncService.fetchWritingBody(id);
@@ -243,6 +283,16 @@ export function WritingsProvider({ children }: { children: ReactNode }) {
 
     // Cache it and mark as offline available
     if (writing) {
+      // Ensure stars field exists - merge from metadata if missing (for older cached writings)
+      if (writing.stars === undefined) {
+        const metadata = await localStorageService.getWritingMetadata(id);
+        if (metadata?.stars !== undefined) {
+          writing = { ...writing, stars: metadata.stars };
+        } else {
+          writing = { ...writing, stars: 0 };
+        }
+      }
+      
       writingsCache.current.set(id, writing);
       // Index body for search
       bodySearchIndex.current.set(id, writing.body.toLowerCase());

@@ -341,6 +341,7 @@ class FirebaseSyncService {
       textAlign: writing.textAlign,
       deletedAt: writing.deletedAt ?? null,
       type: writing.type,
+      stars: writing.stars ?? 0,
     });
 
     // Upload metadata
@@ -352,6 +353,7 @@ class FirebaseSyncService {
       updatedAt: writing.updatedAt,
       deletedAt: writing.deletedAt ?? null,
       type: writing.type,
+      stars: writing.stars ?? 0,
     });
 
     // Mark as synced locally
@@ -535,6 +537,31 @@ class FirebaseSyncService {
 
   // ========== ON-DEMAND BODY FETCHING ==========
 
+  /**
+   * Fetch a writing from Firebase without saving to local storage.
+   * Used for comparison with local version before deciding which to use.
+   */
+  async fetchWritingFromFirebase(id: string): Promise<Writing | null> {
+    if (!this.isOnline) {
+      return null;
+    }
+
+    try {
+      const docRef = doc(db, 'writings', id);
+      const docSnap = await getDoc(docRef);
+
+      if (!docSnap.exists()) {
+        return null;
+      }
+
+      const data = docSnap.data();
+      return this.parseRemoteWriting(id, data);
+    } catch (e) {
+      console.error(`Firebase: Error fetching ${id}:`, e);
+      return null;
+    }
+  }
+
   async fetchWritingBody(id: string): Promise<Writing | null> {
     if (!this.isOnline) {
       console.log('Firebase: Cannot fetch body - offline');
@@ -629,6 +656,7 @@ class FirebaseSyncService {
       isSynced: true,
       deletedAt: data.deletedAt ? (data.deletedAt as string) : undefined,
       type: (data.type as WritingType) ?? 'siir',
+      stars: (data.stars as number) ?? 0,
     };
   }
 
@@ -645,6 +673,7 @@ class FirebaseSyncService {
       textAlign: (data.textAlign as 'left' | 'center' | 'right') ?? 'left',
       deletedAt: data.deletedAt ? (data.deletedAt as string) : undefined,
       type: (data.type as WritingType) ?? 'siir',
+      stars: (data.stars as number) ?? 0,
     };
   }
 
