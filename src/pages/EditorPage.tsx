@@ -598,7 +598,7 @@ export function EditorPage() {
         <Box sx={{ flex: 1 }} />
 
         {/* Book toggle button - only shows when there's an active book */}
-        <BookToggleButton writingId={writing.id} inToolbar />
+        <BookToggleButton writingId={writing.id} inToolbar showLabel />
 
         {/* Delete button */}
         <Tooltip title="Yazıyı sil" arrow slotProps={tooltipSlotProps}>
