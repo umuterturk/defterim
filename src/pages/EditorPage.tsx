@@ -13,6 +13,7 @@ import {
   DialogActions,
   Button,
   Alert,
+  Tooltip,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -27,6 +28,23 @@ import { OfflineIndicator } from '../components/OfflineIndicator';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import type { Writing, WritingType } from '../types/writing';
 import { isValidForSave } from '../types/writing';
+
+// Large tooltip styling for better readability
+const tooltipSlotProps = {
+  tooltip: {
+    sx: {
+      fontSize: '1rem',
+      fontWeight: 500,
+      padding: '8px 14px',
+      bgcolor: '#333',
+    },
+  },
+  arrow: {
+    sx: {
+      color: '#333',
+    },
+  },
+};
 
 export function EditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -544,23 +562,26 @@ export function EditorPage() {
         }}
       >
         {/* Back button */}
-        <Button
-          onClick={handleGoBack}
-          startIcon={<ArrowBackIcon />}
-          sx={{
-            color: '#4A7C59',
-            fontWeight: 600,
-            textTransform: 'none',
-            fontSize: '16px',
-          }}
-        >
-          Geri
-        </Button>
+        <Tooltip title="Listeye geri dön" arrow slotProps={tooltipSlotProps}>
+          <Button
+            onClick={handleGoBack}
+            startIcon={<ArrowBackIcon />}
+            sx={{
+              color: '#4A7C59',
+              fontWeight: 600,
+              textTransform: 'none',
+              fontSize: '16px',
+            }}
+          >
+            Geri
+          </Button>
+        </Tooltip>
 
         {/* Type selector */}
         <WritingTypeSelector
           currentType={writing.type}
           onTypeChange={handleTypeChange}
+          tooltip="Yazı türünü değiştir"
         />
 
         <Box sx={{ flex: 1 }} />
@@ -580,18 +601,34 @@ export function EditorPage() {
         <BookToggleButton writingId={writing.id} inToolbar />
 
         {/* Delete button */}
-        <IconButton onClick={handleShowDeleteDialog} sx={{ color: '#666' }}>
-          <DeleteOutlineIcon />
-        </IconButton>
+        <Tooltip title="Yazıyı sil" arrow slotProps={tooltipSlotProps}>
+          <IconButton onClick={handleShowDeleteDialog} sx={{ color: '#666' }}>
+            <DeleteOutlineIcon />
+          </IconButton>
+        </Tooltip>
 
         {/* Status indicator */}
-        {isSaving ? (
-          <CircularProgress size={24} sx={{ color: '#ff9800' }} />
-        ) : hasUnsavedChanges ? (
-          <EditIcon sx={{ color: '#ff9800', fontSize: 24 }} />
-        ) : (
-          <CheckCircleIcon sx={{ color: '#4caf50', fontSize: 24 }} />
-        )}
+        <Tooltip
+          title={
+            isSaving
+              ? 'Kaydediliyor...'
+              : hasUnsavedChanges
+              ? 'Kaydedilmemiş değişiklikler var'
+              : 'Tüm değişiklikler kaydedildi'
+          }
+          arrow
+          slotProps={tooltipSlotProps}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            {isSaving ? (
+              <CircularProgress size={24} sx={{ color: '#ff9800' }} />
+            ) : hasUnsavedChanges ? (
+              <EditIcon sx={{ color: '#ff9800', fontSize: 24 }} />
+            ) : (
+              <CheckCircleIcon sx={{ color: '#4caf50', fontSize: 24 }} />
+            )}
+          </Box>
+        </Tooltip>
       </Box>
 
       {/* Editor content */}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -44,6 +44,9 @@ import { useBook } from '../contexts/BookContext';
 import { useWritings } from '../contexts/WritingsContext';
 import { generateBookPdf } from '../components/BookPdfDocument';
 import type { WritingMetadata } from '../types/writing';
+
+// Storage key for scroll position
+const BOOK_SCROLL_POSITION_KEY = 'book-edit-scroll-position';
 
 // Sortable item component
 interface SortableItemProps {
@@ -190,6 +193,9 @@ export function BookEditPage() {
     })
   );
 
+  // Ref for scroll restoration
+  const hasRestoredScrollRef = useRef(false);
+
   // Load book on mount
   useEffect(() => {
     const loadBook = async () => {
@@ -222,6 +228,50 @@ export function BookEditPage() {
       .map((writingId) => writingsState.writings.find((w) => w.id === writingId))
       .filter((w): w is WritingMetadata => w !== undefined);
   }, [bookState.activeBook, writingsState.writings]);
+
+  // Restore scroll position on mount (when coming back from editor or reopening the app)
+  useEffect(() => {
+    if (isLoading || hasRestoredScrollRef.current) return;
+    
+    const savedScrollTop = localStorage.getItem(BOOK_SCROLL_POSITION_KEY);
+    if (!savedScrollTop) return;
+    
+    const scrollTop = parseInt(savedScrollTop, 10);
+    if (scrollTop === 0) {
+      hasRestoredScrollRef.current = true;
+      return;
+    }
+    
+    // Use a small timeout to ensure the DOM is fully rendered
+    setTimeout(() => {
+      window.scrollTo({ top: scrollTop, behavior: 'instant' });
+      hasRestoredScrollRef.current = true;
+    }, 100);
+  }, [isLoading, bookWritings.length]); // Re-run when book writings are loaded
+
+  // Persist scroll position on scroll (debounced)
+  useEffect(() => {
+    let scrollSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const handleScroll = () => {
+      // Debounce scroll position saves to avoid excessive localStorage writes
+      if (scrollSaveTimeout) {
+        clearTimeout(scrollSaveTimeout);
+      }
+      scrollSaveTimeout = setTimeout(() => {
+        localStorage.setItem(BOOK_SCROLL_POSITION_KEY, String(window.scrollY));
+      }, 150);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      if (scrollSaveTimeout) {
+        clearTimeout(scrollSaveTimeout);
+      }
+    };
+  }, []);
 
   // Handlers
   const handleGoBack = useCallback(() => {
@@ -267,6 +317,8 @@ export function BookEditPage() {
   }, [removeWritingFromBook]);
 
   const handleNavigateToWriting = useCallback((writingId: string) => {
+    // Save scroll position before navigating
+    localStorage.setItem(BOOK_SCROLL_POSITION_KEY, String(window.scrollY));
     // Pass the return path so EditorPage knows where to go back
     navigate(`/editor/${writingId}`, { state: { returnTo: `/book/${id}` } });
   }, [navigate, id]);
@@ -393,7 +445,7 @@ export function BookEditPage() {
       </Box>
 
       {/* Content */}
-      <Box sx={{ flex: 1, py: 3, overflow: 'auto' }}>
+      <Box sx={{ flex: 1, py: 3 }}>
         <Container maxWidth="md">
           {/* Book Title */}
           <Paper

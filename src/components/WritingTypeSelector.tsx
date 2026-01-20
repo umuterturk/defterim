@@ -6,6 +6,7 @@ import {
   ListItemIcon,
   ListItemText,
   Box,
+  Tooltip,
 } from '@mui/material';
 import AutoStoriesIcon from '@mui/icons-material/AutoStories';
 import ArticleIcon from '@mui/icons-material/Article';
@@ -18,6 +19,7 @@ import { writingTypeDisplayName } from '../types/writing';
 interface WritingTypeSelectorProps {
   currentType: WritingType;
   onTypeChange: (type: WritingType) => void;
+  tooltip?: string;
 }
 
 const typeConfig: Record<WritingType, { icon: ReactElement; color: string }> = {
@@ -29,9 +31,27 @@ const typeConfig: Record<WritingType, { icon: ReactElement; color: string }> = {
 // Pre-compute the type keys to avoid creating new arrays on each render
 const typeKeys = Object.keys(typeConfig) as WritingType[];
 
+// Large tooltip styling for better readability
+const tooltipSlotProps = {
+  tooltip: {
+    sx: {
+      fontSize: '1rem',
+      fontWeight: 500,
+      padding: '8px 14px',
+      bgcolor: '#333',
+    },
+  },
+  arrow: {
+    sx: {
+      color: '#333',
+    },
+  },
+};
+
 export const WritingTypeSelector = memo(function WritingTypeSelector({
   currentType,
   onTypeChange,
+  tooltip,
 }: WritingTypeSelectorProps) {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
@@ -51,29 +71,33 @@ export const WritingTypeSelector = memo(function WritingTypeSelector({
 
   const currentConfig = typeConfig[currentType];
 
+  const button = (
+    <Button
+      onClick={handleClick}
+      sx={{
+        bgcolor: `${currentConfig.color}15`,
+        color: currentConfig.color,
+        borderRadius: '8px',
+        px: 1.5,
+        py: 0.75,
+        textTransform: 'none',
+        fontWeight: 600,
+        fontSize: '14px',
+        border: `1px solid ${currentConfig.color}30`,
+        '&:hover': {
+          bgcolor: `${currentConfig.color}25`,
+        },
+      }}
+      startIcon={currentConfig.icon}
+      endIcon={<ArrowDropDownIcon />}
+    >
+      {writingTypeDisplayName[currentType]}
+    </Button>
+  );
+
   return (
     <>
-      <Button
-        onClick={handleClick}
-        sx={{
-          bgcolor: `${currentConfig.color}15`,
-          color: currentConfig.color,
-          borderRadius: '8px',
-          px: 1.5,
-          py: 0.75,
-          textTransform: 'none',
-          fontWeight: 600,
-          fontSize: '14px',
-          border: `1px solid ${currentConfig.color}30`,
-          '&:hover': {
-            bgcolor: `${currentConfig.color}25`,
-          },
-        }}
-        startIcon={currentConfig.icon}
-        endIcon={<ArrowDropDownIcon />}
-      >
-        {writingTypeDisplayName[currentType]}
-      </Button>
+      {tooltip ? <Tooltip title={tooltip} arrow slotProps={tooltipSlotProps}>{button}</Tooltip> : button}
       <Menu
         anchorEl={anchorEl}
         open={open}

@@ -231,6 +231,9 @@ class LocalStorageService {
   // ========== FULL WRITING OPERATIONS (ON-DEMAND) ==========
 
   async getFullWriting(id: string): Promise<Writing | null> {
+    // Ensure DB is initialized before reading
+    await this.initialize();
+    
     if (!this.db) return null;
     
     const writing = await this.db.get('writings', id);
@@ -439,6 +442,9 @@ class LocalStorageService {
   // ========== FULL BOOK OPERATIONS ==========
 
   async getBook(id: string): Promise<Book | null> {
+    // Ensure DB is initialized before reading
+    await this.initialize();
+    
     if (!this.db) return null;
     
     const book = await this.db.get('books', id);

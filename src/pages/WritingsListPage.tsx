@@ -13,6 +13,7 @@ import {
   CircularProgress,
   Chip,
   LinearProgress,
+  Tooltip,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
@@ -39,7 +40,25 @@ import styles from './WritingsListPage.module.css';
 
 // Configuration constants
 const CARD_HEIGHT = 150;
+
+// Large tooltip styling for better readability
+const tooltipSlotProps = {
+  tooltip: {
+    sx: {
+      fontSize: '1rem',
+      fontWeight: 500,
+      padding: '8px 14px',
+      bgcolor: '#333',
+    },
+  },
+  arrow: {
+    sx: {
+      color: '#333',
+    },
+  },
+};
 const SCROLL_POSITION_KEY = 'writings-list-scroll-position';
+const FILTER_STATE_KEY = 'writings-list-filter-state';
 const SEARCH_DEBOUNCE_MS = 300;
 const SCROLL_RESTORE_MAX_ATTEMPTS = 10;
 const VIRTUALIZED_OVERSCAN_COUNT = 5;
@@ -63,6 +82,31 @@ const YAZI_BUTTON_SX = {
   color: 'white',
   '&:hover': { bgcolor: 'var(--color-primary-hover)' },
 } as const;
+
+// Filter state type for persistence
+interface FilterState {
+  searchQuery: string;
+  selectedType: WritingType | null;
+  sortType: SortType;
+  sortAscending: boolean;
+}
+
+// Helper functions for filter state persistence
+const getStoredFilterState = (): FilterState => {
+  try {
+    const stored = localStorage.getItem(FILTER_STATE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return { searchQuery: '', selectedType: null, sortType: 'created', sortAscending: false };
+};
+
+const saveFilterState = (state: FilterState) => {
+  localStorage.setItem(FILTER_STATE_KEY, JSON.stringify(state));
+};
 
 // Row props type for virtualized list
 interface ListRowProps {
@@ -121,11 +165,12 @@ export function WritingsListPage() {
   const hasRestoredScrollRef = useRef(false);
   const isInitialMountRef = useRef(true);
 
-  // Local state
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedType, setSelectedType] = useState<WritingType | null>(null);
-  const [sortType, setSortType] = useState<SortType>('created');
-  const [sortAscending, setSortAscending] = useState(false);
+  // Local state - initialized from localStorage to persist across navigation
+  const storedFilterState = useMemo(() => getStoredFilterState(), []);
+  const [searchQuery, setSearchQuery] = useState(storedFilterState.searchQuery);
+  const [selectedType, setSelectedType] = useState<WritingType | null>(storedFilterState.selectedType);
+  const [sortType, setSortType] = useState<SortType>(storedFilterState.sortType);
+  const [sortAscending, setSortAscending] = useState(storedFilterState.sortAscending);
 
   // Book creation dialog state
   const [showBookDialog, setShowBookDialog] = useState(false);
@@ -207,19 +252,27 @@ export function WritingsListPage() {
     const element = listRef.current?.element;
     if (element) {
       element.scrollTop = 0;
-      sessionStorage.removeItem(SCROLL_POSITION_KEY);
+      localStorage.removeItem(SCROLL_POSITION_KEY);
     }
   }, [deferredSearch, deferredType, deferredSortType, deferredSortAscending, listRef]);
 
-  // Restore scroll position on mount (when coming back from editor)
+  // Persist filter state when it changes
+  useEffect(() => {
+    saveFilterState({ searchQuery, selectedType, sortType, sortAscending });
+  }, [searchQuery, selectedType, sortType, sortAscending]);
+
+  // Restore scroll position on mount (when coming back from editor or reopening the app)
   useEffect(() => {
     if (hasRestoredScrollRef.current) return;
     
-    const savedScrollTop = sessionStorage.getItem(SCROLL_POSITION_KEY);
+    const savedScrollTop = localStorage.getItem(SCROLL_POSITION_KEY);
     if (!savedScrollTop) return;
     
     const scrollTop = parseInt(savedScrollTop, 10);
-    if (scrollTop === 0) return; // No need to restore if at top
+    if (scrollTop === 0) {
+      hasRestoredScrollRef.current = true;
+      return;
+    }
     
     // Try to restore with retries (element might not be ready immediately)
     let attempts = 0;
@@ -231,15 +284,57 @@ export function WritingsListPage() {
       if (element && element.scrollHeight > 0) {
         element.scrollTop = scrollTop;
         hasRestoredScrollRef.current = true;
-        // Clear the saved position after restoring
-        sessionStorage.removeItem(SCROLL_POSITION_KEY);
       } else if (attempts < SCROLL_RESTORE_MAX_ATTEMPTS) {
         requestAnimationFrame(tryRestore);
       }
     };
     
     requestAnimationFrame(tryRestore);
-  }, [listRef, filteredWritings.length]); // Also depend on filteredWritings to ensure list is ready
+  }, [listRef, filteredWritings.length]); // Depend on filteredWritings.length to ensure list is ready
+
+  // Persist scroll position on scroll (debounced)
+  useEffect(() => {
+    let scrollSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+    let currentElement: HTMLElement | null = null;
+
+    const handleScroll = () => {
+      if (!currentElement) return;
+      // Debounce scroll position saves to avoid excessive localStorage writes
+      if (scrollSaveTimeout) {
+        clearTimeout(scrollSaveTimeout);
+      }
+      scrollSaveTimeout = setTimeout(() => {
+        if (currentElement) {
+          localStorage.setItem(SCROLL_POSITION_KEY, String(currentElement.scrollTop));
+        }
+      }, 150);
+    };
+
+    // Wait for element to be ready (similar to scroll restoration)
+    let attempts = 0;
+    const tryAttach = () => {
+      const element = listRef.current?.element;
+      attempts++;
+      
+      if (element) {
+        currentElement = element;
+        element.addEventListener('scroll', handleScroll, { passive: true });
+      } else if (attempts < SCROLL_RESTORE_MAX_ATTEMPTS) {
+        requestAnimationFrame(tryAttach);
+      }
+    };
+    
+    requestAnimationFrame(tryAttach);
+
+    return () => {
+      if (currentElement) {
+        currentElement.removeEventListener('scroll', handleScroll);
+      }
+      if (scrollSaveTimeout) {
+        clearTimeout(scrollSaveTimeout);
+      }
+    };
+  }, [listRef, filteredWritings.length]); // Re-attach when list element changes
 
   // Measure container height
   useEffect(() => {
@@ -271,9 +366,8 @@ export function WritingsListPage() {
     // Save scroll position before navigating
     const element = listRef.current?.element;
     if (element) {
-      sessionStorage.setItem(SCROLL_POSITION_KEY, String(element.scrollTop));
+      localStorage.setItem(SCROLL_POSITION_KEY, String(element.scrollTop));
     }
-    setSearchQuery('');
     // createNewWriting is now synchronous - returns immediately
     const writing = createNewWriting(type);
     navigate(`/editor/${writing.id}`);
@@ -283,9 +377,8 @@ export function WritingsListPage() {
     // Save scroll position before navigating
     const element = listRef.current?.element;
     if (element) {
-      sessionStorage.setItem(SCROLL_POSITION_KEY, String(element.scrollTop));
+      localStorage.setItem(SCROLL_POSITION_KEY, String(element.scrollTop));
     }
-    setSearchQuery('');
     navigate(`/editor/${id}`);
   }, [navigate, listRef]);
 
@@ -458,24 +551,28 @@ export function WritingsListPage() {
               
               {/* New writing buttons */}
               <Stack direction="row" spacing={1} className={styles.newWritingButtons}>
-                <Button
-                  variant="contained"
-                  onClick={() => handleCreateWriting('siir')}
-                  startIcon={<AutoStoriesIcon />}
-                  className={styles.actionButton}
-                  sx={SIIR_BUTTON_SX}
-                >
-                  <span className={styles.buttonText}>Şiir Yaz</span>
-                </Button>
-                <Button
-                  variant="contained"
-                  onClick={() => handleCreateWriting('yazi')}
-                  startIcon={<EditNoteIcon />}
-                  className={styles.actionButton}
-                  sx={YAZI_BUTTON_SX}
-                >
-                  <span className={styles.buttonText}>Yazı Yaz</span>
-                </Button>
+                <Tooltip title="Yeni şiir oluştur" arrow slotProps={tooltipSlotProps}>
+                  <Button
+                    variant="contained"
+                    onClick={() => handleCreateWriting('siir')}
+                    startIcon={<AutoStoriesIcon />}
+                    className={styles.actionButton}
+                    sx={SIIR_BUTTON_SX}
+                  >
+                    <span className={styles.buttonText}>Şiir Yaz</span>
+                  </Button>
+                </Tooltip>
+                <Tooltip title="Yeni yazı oluştur" arrow slotProps={tooltipSlotProps}>
+                  <Button
+                    variant="contained"
+                    onClick={() => handleCreateWriting('yazi')}
+                    startIcon={<EditNoteIcon />}
+                    className={styles.actionButton}
+                    sx={YAZI_BUTTON_SX}
+                  >
+                    <span className={styles.buttonText}>Yazı Yaz</span>
+                  </Button>
+                </Tooltip>
               </Stack>
             </Box>
           </Box>
@@ -504,9 +601,11 @@ export function WritingsListPage() {
                   <CircularProgress size={18} sx={{ color: 'var(--color-primary)', mr: 1 }} />
                 )}
                 {searchQuery && (
-                  <IconButton size="small" onClick={handleClearSearch}>
-                    <ClearIcon fontSize="small" />
-                  </IconButton>
+                  <Tooltip title="Aramayı temizle" arrow slotProps={tooltipSlotProps}>
+                    <IconButton size="small" onClick={handleClearSearch}>
+                      <ClearIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                 )}
               </InputAdornment>
             ),

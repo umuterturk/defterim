@@ -8,6 +8,7 @@ import {
   ListItemIcon,
   ListItemText,
   Divider,
+  Tooltip,
 } from '@mui/material';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
@@ -16,6 +17,23 @@ import AddIcon from '@mui/icons-material/Add';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import type { Book, BookMetadata } from '../types/book';
 import styles from './BookMenuDropdown.module.css';
+
+// Large tooltip styling for better readability
+const tooltipSlotProps = {
+  tooltip: {
+    sx: {
+      fontSize: '1rem',
+      fontWeight: 500,
+      padding: '8px 14px',
+      bgcolor: '#333',
+    },
+  },
+  arrow: {
+    sx: {
+      color: '#333',
+    },
+  },
+};
 
 // Static sx objects - hoisted to prevent recreation
 const BOOK_COUNT_CHIP_SX = {
@@ -98,39 +116,43 @@ export const BookMenuDropdown = memo(function BookMenuDropdown({
   // If no books exist, show simple create button
   if (books.length === 0 && !activeBook) {
     return (
-      <Button
-        variant="outlined"
-        onClick={onCreateNew}
-        startIcon={<MenuBookIcon />}
-        className={styles.button}
-      >
-        <span className={styles.buttonText}>Oluştur</span>
-      </Button>
+      <Tooltip title="Yeni kitap oluştur" arrow slotProps={tooltipSlotProps}>
+        <Button
+          variant="outlined"
+          onClick={onCreateNew}
+          startIcon={<MenuBookIcon />}
+          className={styles.button}
+        >
+          <span className={styles.buttonText}>Oluştur</span>
+        </Button>
+      </Tooltip>
     );
   }
 
   return (
     <>
-      <Button
-        variant="outlined"
-        onClick={handleOpen}
-        startIcon={<MenuBookIcon />}
-        endIcon={<ArrowDropDownIcon />}
-        className={`${styles.button} ${activeBook ? styles.buttonActive : ''}`}
-      >
-        {activeBook ? (
-          <>
-            {activeBook.title}
-            <Chip
-              label={activeBook.writingIds.length}
-              size="small"
-              sx={BOOK_COUNT_CHIP_SX}
-            />
-          </>
-        ) : (
-          'Kitap Seç'
-        )}
-      </Button>
+      <Tooltip title={activeBook ? 'Kitap seçenekleri' : 'Kitap seç veya oluştur'} arrow slotProps={tooltipSlotProps}>
+        <Button
+          variant="outlined"
+          onClick={handleOpen}
+          startIcon={<MenuBookIcon />}
+          endIcon={<ArrowDropDownIcon />}
+          className={`${styles.button} ${activeBook ? styles.buttonActive : ''}`}
+        >
+          {activeBook ? (
+            <>
+              {activeBook.title}
+              <Chip
+                label={activeBook.writingIds.length}
+                size="small"
+                sx={BOOK_COUNT_CHIP_SX}
+              />
+            </>
+          ) : (
+            'Kitap Seç'
+          )}
+        </Button>
+      </Tooltip>
       <Menu
         anchorEl={anchorEl}
         open={isOpen}

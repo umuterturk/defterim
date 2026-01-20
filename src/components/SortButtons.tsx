@@ -1,5 +1,5 @@
 import React, { memo, useCallback } from 'react';
-import { Button, Stack, Typography } from '@mui/material';
+import { Button, Stack, Typography, Tooltip } from '@mui/material';
 import SortByAlphaIcon from '@mui/icons-material/SortByAlpha';
 import UpdateIcon from '@mui/icons-material/Update';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
@@ -10,6 +10,23 @@ import styles from './SortButtons.module.css';
 
 export type SortType = 'alphabetic' | 'lastUpdated' | 'created' | 'stars';
 
+// Large tooltip styling for better readability
+const tooltipSlotProps = {
+  tooltip: {
+    sx: {
+      fontSize: '1rem',
+      fontWeight: 500,
+      padding: '8px 14px',
+      bgcolor: '#333',
+    },
+  },
+  arrow: {
+    sx: {
+      color: '#333',
+    },
+  },
+};
+
 interface SortButtonsProps {
   sortType: SortType;
   sortAscending: boolean;
@@ -19,14 +36,15 @@ interface SortButtonsProps {
 interface SortOption {
   type: SortType;
   label: string;
+  tooltip: string;
   icon: React.ReactNode;
 }
 
 const sortOptions: SortOption[] = [
-  { type: 'alphabetic', label: 'Başlık', icon: <SortByAlphaIcon fontSize="small" /> },
-  { type: 'lastUpdated', label: 'Güncelleme', icon: <UpdateIcon fontSize="small" /> },
-  { type: 'created', label: 'Oluşturma', icon: <CalendarTodayIcon fontSize="small" /> },
-  { type: 'stars', label: 'Puan', icon: <StarIcon fontSize="small" sx={{ color: '#FFB800' }} /> },
+  { type: 'alphabetic', label: 'Başlık', tooltip: 'Başlığa göre sırala', icon: <SortByAlphaIcon fontSize="small" /> },
+  { type: 'lastUpdated', label: 'Güncelleme', tooltip: 'Son güncelleme tarihine göre sırala', icon: <UpdateIcon fontSize="small" /> },
+  { type: 'created', label: 'Oluşturma', tooltip: 'Oluşturma tarihine göre sırala', icon: <CalendarTodayIcon fontSize="small" /> },
+  { type: 'stars', label: 'Puan', tooltip: 'Puana göre sırala', icon: <StarIcon fontSize="small" sx={{ color: '#FFB800' }} /> },
 ];
 
 // Individual sort button - memoized for performance
@@ -49,16 +67,18 @@ const SortButton = memo(function SortButton({
   const buttonClassName = `${styles.button} ${isSelected ? styles.buttonSelected : styles.buttonUnselected}`;
 
   return (
-    <Button
-      variant={isSelected ? 'contained' : 'outlined'}
-      size="small"
-      onClick={handleClick}
-      startIcon={option.icon}
-      endIcon={isSelected ? <ArrowIcon sx={{ fontSize: '14px !important' }} /> : undefined}
-      className={buttonClassName}
-    >
-      <span className={styles.buttonText}>{option.label}</span>
-    </Button>
+    <Tooltip title={option.tooltip} arrow slotProps={tooltipSlotProps}>
+      <Button
+        variant={isSelected ? 'contained' : 'outlined'}
+        size="small"
+        onClick={handleClick}
+        startIcon={option.icon}
+        endIcon={isSelected ? <ArrowIcon sx={{ fontSize: '14px !important' }} /> : undefined}
+        className={buttonClassName}
+      >
+        <span className={styles.buttonText}>{option.label}</span>
+      </Button>
+    </Tooltip>
   );
 });
 
