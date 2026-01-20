@@ -14,6 +14,28 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Redirect old BrowserRouter URLs to HashRouter format
+      // e.g., /editor/123 -> /#/editor/123
+      // e.g., /defterim/editor/123 -> /defterim/#/editor/123
+      (function() {
+        var path = window.location.pathname;
+        var base = '/defterim/'; // GitHub Pages base
+        
+        // Remove base path if present (for GitHub Pages)
+        if (path.startsWith(base)) {
+          path = path.slice(base.length - 1); // Keep leading /
+        }
+        
+        // If there's a path beyond root and no hash, redirect to hash URL
+        if (path && path !== '/' && !window.location.hash) {
+          var newUrl = window.location.origin + 
+            (window.location.pathname.startsWith(base) ? base.slice(0, -1) : '') + 
+            '/#' + path + window.location.search;
+          window.location.replace(newUrl);
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
