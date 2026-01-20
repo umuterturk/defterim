@@ -87,6 +87,9 @@ class FirebaseSyncService {
         await this.performIncrementalSync();
       }
 
+      // Sync local stars to Firebase (one-time migration for existing local stars)
+      await this.syncLocalStarsToFirebase();
+
       // Start periodic sync every 30 seconds
       if (this.syncTimer) clearInterval(this.syncTimer);
       this.syncTimer = setInterval(() => {
@@ -374,6 +377,93 @@ class FirebaseSyncService {
           console.log(`Firebase: Permanently deleted old "${meta.title}"`);
         }
       }
+    }
+  }
+
+  // ========== LOCAL STARS SYNC ==========
+
+  /**
+   * Sync local stars to Firebase.
+   * This handles the case where writings have stars stored locally but
+   * Firebase might not have them (e.g., stars added while offline, or
+   * legacy data before stars were properly synced).
+   */
+  private async syncLocalStarsToFirebase(): Promise<void> {
+    if (!this.isOnline) return;
+
+    try {
+      const metaCollection = collection(db, 'writings_meta');
+      const writingsCollection = collection(db, 'writings');
+
+      // Get all local writings metadata
+      const localMetadata = await localStorageService.getAllWritingsMetadataIncludingDeleted();
+      
+      // Filter to only synced writings that have stars
+      const writingsWithStars = localMetadata.filter(
+        (m) => m.isSynced && m.stars !== undefined && m.stars > 0
+      );
+
+      if (writingsWithStars.length === 0) {
+        console.log('Firebase: No local stars to sync');
+        return;
+      }
+
+      console.log(`Firebase: Checking ${writingsWithStars.length} writings with local stars...`);
+
+      let syncedCount = 0;
+
+      for (const localMeta of writingsWithStars) {
+        try {
+          // Fetch the current Firebase metadata to check if stars need syncing
+          const metaDocRef = doc(metaCollection, localMeta.id);
+          const metaDocSnap = await getDoc(metaDocRef);
+
+          if (!metaDocSnap.exists()) {
+            // Metadata doesn't exist in Firebase - skip (will be synced normally)
+            continue;
+          }
+
+          const remoteData = metaDocSnap.data();
+          const remoteStars = (remoteData.stars as number) ?? 0;
+
+          // Only sync if local has stars but remote doesn't (or has fewer)
+          if (localMeta.stars! > remoteStars) {
+            console.log(`Firebase: Syncing stars for "${localMeta.title}" (local: ${localMeta.stars}, remote: ${remoteStars})`);
+
+            // Update metadata with stars
+            await setDoc(metaDocRef, {
+              ...remoteData,
+              stars: localMeta.stars,
+              updatedAt: new Date().toISOString(),
+            });
+
+            // Also update full writing document if it exists
+            const writingDocRef = doc(writingsCollection, localMeta.id);
+            const writingDocSnap = await getDoc(writingDocRef);
+            
+            if (writingDocSnap.exists()) {
+              const writingData = writingDocSnap.data();
+              await setDoc(writingDocRef, {
+                ...writingData,
+                stars: localMeta.stars,
+                updatedAt: new Date().toISOString(),
+              });
+            }
+
+            syncedCount++;
+          }
+        } catch (e) {
+          console.error(`Firebase: Error syncing stars for ${localMeta.id}:`, e);
+        }
+      }
+
+      if (syncedCount > 0) {
+        console.log(`Firebase: Synced stars for ${syncedCount} writings`);
+      } else {
+        console.log('Firebase: All local stars already synced');
+      }
+    } catch (e) {
+      console.error('Firebase: Error syncing local stars:', e);
     }
   }
 

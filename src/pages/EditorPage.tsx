@@ -61,12 +61,24 @@ export function EditorPage() {
   // Track if component is mounted
   const isMountedRef = useRef(true);
 
+  // Ref to track if we need to save (for use in event handlers)
+  const pendingSaveRef = useRef<Writing | null>(null);
+
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
     };
   }, []);
+
+  // Keep pendingSaveRef in sync with writing when there are unsaved changes
+  useEffect(() => {
+    if (hasUnsavedChanges && writing) {
+      pendingSaveRef.current = writing;
+    } else {
+      pendingSaveRef.current = null;
+    }
+  }, [hasUnsavedChanges, writing]);
 
   // Load writing - wait for context to be initialized first
   useEffect(() => {
@@ -188,12 +200,30 @@ export function EditorPage() {
       if (isMountedRef.current) {
         setHasUnsavedChanges(false);
       }
+      
+      // Clear pending save ref since we just saved
+      pendingSaveRef.current = null;
     } finally {
       if (isMountedRef.current) {
         setIsSaving(false);
       }
     }
   }, [writing, saveWriting, deleteWriting, isSaving, isPendingWriting]);
+
+  // Immediate save function (fire and forget, doesn't update state)
+  // Used for beforeunload, visibilitychange, and popstate events
+  const saveImmediately = useCallback(() => {
+    const writingToSave = pendingSaveRef.current;
+    if (!writingToSave) return;
+
+    // Check if writing is valid (has title OR body)
+    const isValid = isValidForSave(writingToSave);
+    if (!isValid) return;
+
+    // Fire and forget - save in background
+    saveWriting(writingToSave);
+    pendingSaveRef.current = null;
+  }, [saveWriting]);
 
   // Auto-save with debounce
   useEffect(() => {
@@ -224,6 +254,58 @@ export function EditorPage() {
       }
     };
   }, []);
+
+  // Save immediately on page unload, visibility change, or browser navigation
+  useEffect(() => {
+    // Handle page refresh/close - save pending changes
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (pendingSaveRef.current && isValidForSave(pendingSaveRef.current)) {
+        // Try to save immediately
+        saveImmediately();
+        
+        // Show browser's native confirmation dialog
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    // Handle tab visibility change - save when user switches away
+    const handleVisibilityChange = () => {
+      if (document.hidden && pendingSaveRef.current) {
+        saveImmediately();
+      }
+    };
+
+    // Handle browser back/forward buttons
+    const handlePopState = () => {
+      if (pendingSaveRef.current) {
+        saveImmediately();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [saveImmediately]);
+
+  // Save on component unmount (covers all navigation cases)
+  useEffect(() => {
+    return () => {
+      // When component unmounts (any navigation), save pending changes
+      if (pendingSaveRef.current && isValidForSave(pendingSaveRef.current)) {
+        // Get the writing before the ref might be cleared
+        const writingToSave = pendingSaveRef.current;
+        // Fire and forget
+        saveWriting(writingToSave);
+      }
+    };
+  }, [saveWriting]);
 
   // Handle field changes - optimized
   const handleTitleChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -291,6 +373,9 @@ export function EditorPage() {
       clearTimeout(autoSaveTimerRef.current);
     }
 
+    // Clear pending save ref to prevent double-save on unmount
+    pendingSaveRef.current = null;
+
     if (!writing) {
       navigate(returnTo);
       return;
@@ -333,6 +418,9 @@ export function EditorPage() {
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
     }
+
+    // Clear pending save ref to prevent save on unmount
+    pendingSaveRef.current = null;
 
     // Navigate immediately
     navigate(returnTo);
@@ -475,7 +563,9 @@ export function EditorPage() {
           onTypeChange={handleTypeChange}
         />
 
-        {/* Star rating - hide on very small screens */}
+        <Box sx={{ flex: 1 }} />
+
+        {/* Star rating - centered, hide on very small screens */}
         <Box sx={{ display: { xs: 'none', sm: 'flex' } }}>
           <StarRating
             value={writing.stars ?? 0}
@@ -609,6 +699,8 @@ export function EditorPage() {
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
+                justifyContent: 'center',
+                width: '100%',
                 gap: 1,
               }}
             >
