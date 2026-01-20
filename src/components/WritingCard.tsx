@@ -101,7 +101,7 @@ function WritingCardComponent({ metadata, onTap, isAvailableOffline = true, isOn
         className={styles.cardActionArea}
       >
         <CardContent className={styles.cardContent}>
-          {/* Row 1: Type + Title */}
+          {/* Row 1: Type + Title + Stars */}
           <Box className={styles.titleRow}>
             <Chip
               icon={WRITING_TYPE_ICONS[metadata.type]}
@@ -128,6 +128,19 @@ function WritingCardComponent({ metadata, onTap, isAvailableOffline = true, isOn
             >
               {displayTitle}
             </Typography>
+            {/* Show stars next to title if rating exists */}
+            {(metadata.stars ?? 0) > 0 && (
+              <Tooltip title={STAR_LABELS[metadata.stars ?? 0]} arrow placement="top" slotProps={tooltipSlotProps}>
+                <Box className={styles.starsDisplayInline}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <StarIcon
+                      key={star}
+                      className={star <= (metadata.stars ?? 0) ? styles.starFilled : styles.starEmpty}
+                    />
+                  ))}
+                </Box>
+              </Tooltip>
+            )}
             {isUnavailable && (
               <Tooltip title="İnternete bağlı değilken kullanılamıyor" arrow>
                 <CloudOffOutlinedIcon className={styles.cloudIcon} />
@@ -147,7 +160,7 @@ function WritingCardComponent({ metadata, onTap, isAvailableOffline = true, isOn
             <Box className={styles.previewPlaceholder} />
           )}
           
-          {/* Row 3: Date and Stars */}
+          {/* Row 3: Date */}
           <Box className={styles.dateRow}>
             <Typography
               variant="caption"
@@ -155,19 +168,6 @@ function WritingCardComponent({ metadata, onTap, isAvailableOffline = true, isOn
             >
               {formatDate(metadata.updatedAt)}
             </Typography>
-            {/* Show stars if rating exists */}
-            {(metadata.stars ?? 0) > 0 && (
-              <Tooltip title={STAR_LABELS[metadata.stars ?? 0]} arrow placement="top" slotProps={tooltipSlotProps}>
-                <Box className={styles.starsDisplay}>
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <StarIcon
-                      key={star}
-                      className={star <= (metadata.stars ?? 0) ? styles.starFilled : styles.starEmpty}
-                    />
-                  ))}
-                </Box>
-              </Tooltip>
-            )}
           </Box>
         </CardContent>
       </CardActionArea>
