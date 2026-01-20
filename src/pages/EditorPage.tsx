@@ -20,11 +20,13 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditIcon from '@mui/icons-material/Edit';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CloudOffIcon from '@mui/icons-material/CloudOff';
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import { useWritings } from '../contexts/WritingsContext';
 import { WritingTypeSelector } from '../components/WritingTypeSelector';
 import { BookToggleButton } from '../components/BookToggleButton';
 import { StarRating } from '../components/StarRating';
 import { OfflineIndicator } from '../components/OfflineIndicator';
+import { AiCorrectionDialog } from '../components/AiCorrectionDialog';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import type { Writing, WritingType } from '../types/writing';
 import { isValidForSave } from '../types/writing';
@@ -61,6 +63,7 @@ export function EditorPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showAiCorrectionDialog, setShowAiCorrectionDialog] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState<'offline' | 'not_found' | null>(null);
 
@@ -455,6 +458,19 @@ export function EditorPage() {
     setShowDeleteDialog(false);
   }, []);
 
+  // AI Correction dialog handlers
+  const handleShowAiCorrectionDialog = useCallback(() => {
+    setShowAiCorrectionDialog(true);
+  }, []);
+
+  const handleHideAiCorrectionDialog = useCallback(() => {
+    setShowAiCorrectionDialog(false);
+  }, []);
+
+  const handleAcceptAiCorrection = useCallback((correctedText: string) => {
+    setWriting(prev => prev ? { ...prev, body: correctedText } : null);
+  }, []);
+
   // Loading state
   if (isLoading) {
     return (
@@ -599,6 +615,17 @@ export function EditorPage() {
 
         {/* Book toggle button - only shows when there's an active book */}
         <BookToggleButton writingId={writing.id} writingTitle={writing.title} inToolbar showLabel />
+
+        {/* AI Correction button */}
+        <Tooltip title="Yapay Zeka ile Yazım Hatalarını Düzelt" arrow slotProps={tooltipSlotProps}>
+          <IconButton
+            onClick={handleShowAiCorrectionDialog}
+            disabled={!writing.body.trim()}
+            sx={{ color: writing.body.trim() ? '#7B5EA7' : '#ccc' }}
+          >
+            <AutoFixHighIcon />
+          </IconButton>
+        </Tooltip>
 
         {/* Delete button */}
         <Tooltip title="Yazıyı sil" arrow slotProps={tooltipSlotProps}>
@@ -790,6 +817,14 @@ export function EditorPage() {
 
       {/* Offline indicator - full message with save info for editor */}
       <OfflineIndicator showSaveInfo />
+
+      {/* AI Correction dialog */}
+      <AiCorrectionDialog
+        open={showAiCorrectionDialog}
+        onClose={handleHideAiCorrectionDialog}
+        onAccept={handleAcceptAiCorrection}
+        originalText={writing.body}
+      />
     </Box>
   );
 }
