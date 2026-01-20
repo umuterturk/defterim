@@ -43,6 +43,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useBook } from '../contexts/BookContext';
 import { useWritings } from '../contexts/WritingsContext';
 import { generateBookPdf } from '../components/BookPdfDocument';
+import { StarRating } from '../components/StarRating';
 import type { WritingMetadata } from '../types/writing';
 
 // Storage key for scroll position
@@ -128,20 +129,25 @@ function SortableItem({ id, metadata, onRemove, onNavigate }: SortableItemProps)
           },
         }}
       >
-        <Typography
-          className="writing-title"
-          variant="subtitle1"
-          sx={{
-            fontWeight: 600,
-            color: '#2C2C2C',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            transition: 'color 0.2s',
-          }}
-        >
-          {metadata.title || 'Başlıksız'}
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography
+            className="writing-title"
+            variant="subtitle1"
+            sx={{
+              fontWeight: 600,
+              color: '#2C2C2C',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              transition: 'color 0.2s',
+            }}
+          >
+            {metadata.title || 'Başlıksız'}
+          </Typography>
+          {(metadata.stars ?? 0) > 0 && (
+            <StarRating value={metadata.stars ?? 0} readonly size="small" />
+          )}
+        </Box>
         {metadata.preview && (
           <Typography
             variant="body2"
