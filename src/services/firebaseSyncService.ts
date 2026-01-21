@@ -152,47 +152,78 @@ class FirebaseSyncService {
       const localMetadata = await localStorageService.getAllWritingsMetadataIncludingDeleted();
       const localMap = new Map(localMetadata.map((w) => [w.id, w]));
 
-      // Upload any unsynced local writings first
-      const unsyncedWritings = localMetadata.filter((m) => !m.isSynced);
-      if (unsyncedWritings.length > 0) {
-        console.log(`Firebase: Uploading ${unsyncedWritings.length} unsynced local writings first...`);
-        for (const meta of unsyncedWritings) {
-          const localWriting = await localStorageService.getFullWriting(meta.id);
-          if (localWriting) {
-            await this.uploadWriting(localWriting);
-            console.log(`Firebase: Uploaded unsynced "${localWriting.title}"`);
-          }
-        }
-      }
-
-      // Download ALL metadata
+      // Download ALL metadata FIRST to know what's on remote
       const metaSnapshot = await getDocs(metaCollection);
       console.log(`Firebase: Downloaded ${metaSnapshot.docs.length} metadata documents`);
+
+      // Build a map of remote metadata
+      const remoteMap = new Map<string, WritingMetadata>();
+      for (const docSnap of metaSnapshot.docs) {
+        const data = docSnap.data();
+        const remoteMeta = this.parseRemoteMetadata(docSnap.id, data);
+        remoteMap.set(docSnap.id, remoteMeta);
+      }
 
       const totalDocs = metaSnapshot.docs.length;
       const metadataToSave: WritingMetadata[] = [];
 
-      // Collect all metadata first (no UI updates yet)
+      // Process unsynced local writings with proper conflict resolution
+      const unsyncedWritings = localMetadata.filter((m) => !m.isSynced);
+      if (unsyncedWritings.length > 0) {
+        console.log(`Firebase: Processing ${unsyncedWritings.length} unsynced local writings...`);
+        for (const localMeta of unsyncedWritings) {
+          const remoteMeta = remoteMap.get(localMeta.id);
+          const localWriting = await localStorageService.getFullWriting(localMeta.id);
+          
+          if (!localWriting) continue;
+
+          if (!remoteMeta) {
+            // No remote version - safe to upload
+            await this.uploadWriting(localWriting);
+            console.log(`Firebase: Uploaded new writing "${localWriting.title}"`);
+          } else {
+            // Remote version exists - compare timestamps (last write wins)
+            const localTime = new Date(localMeta.updatedAt).getTime();
+            const remoteTime = new Date(remoteMeta.updatedAt).getTime();
+
+            if (localTime > remoteTime) {
+              // Local is newer - upload it
+              await this.uploadWriting(localWriting);
+              console.log(`Firebase: Uploaded writing "${localWriting.title}" (local is newer: ${localMeta.updatedAt} > ${remoteMeta.updatedAt})`);
+            } else if (remoteTime > localTime) {
+              // Remote is newer - queue for download (discard local changes)
+              metadataToSave.push(remoteMeta);
+              console.log(`Firebase: Will download writing "${remoteMeta.title}" (remote is newer: ${remoteMeta.updatedAt} > ${localMeta.updatedAt})`);
+            } else {
+              // Same timestamp - mark local as synced
+              const syncedWriting: Writing = { ...localWriting, isSynced: true };
+              await localStorageService.saveWriting(syncedWriting);
+            }
+          }
+        }
+      }
+
+      // Process remote metadata - download new or newer items
       for (let i = 0; i < metaSnapshot.docs.length; i++) {
         const docSnap = metaSnapshot.docs[i];
-        const data = docSnap.data();
-        const remoteMeta = this.parseRemoteMetadata(docSnap.id, data);
+        const remoteMeta = remoteMap.get(docSnap.id)!;
         const localMeta = localMap.get(docSnap.id);
 
         if (!localMeta) {
-          // New from remote - save metadata only
+          // New from remote - save metadata only (unless deleted)
           if (!isDeleted(remoteMeta)) {
             metadataToSave.push(remoteMeta);
           }
-        } else if (!localMeta.isSynced) {
-          // Local was just uploaded - skip
-          continue;
-        } else {
-          // Check if remote is newer
-          if (new Date(remoteMeta.updatedAt) > new Date(localMeta.updatedAt)) {
+        } else if (localMeta.isSynced) {
+          // Local is already synced - check if remote is newer
+          const localTime = new Date(localMeta.updatedAt).getTime();
+          const remoteTime = new Date(remoteMeta.updatedAt).getTime();
+
+          if (remoteTime > localTime) {
             metadataToSave.push(remoteMeta);
           }
         }
+        // Note: Unsynced local writings were already handled above
 
         // Update progress every 100 items
         if (i % 100 === 0) {
@@ -241,39 +272,48 @@ class FirebaseSyncService {
         return;
       }
 
-      // Upload any unsynced local writings first
-      await this.uploadUnsyncedWritings();
-
       console.log(`Firebase: Incremental sync since ${lastSyncTime.toISOString()}`);
 
-      // Query only metadata updated after lastSyncTime
+      // Query only metadata updated after lastSyncTime FIRST
       const q = query(
         metaCollection,
         where('updatedAt', '>', lastSyncTime.toISOString())
       );
       const metaSnapshot = await getDocs(q);
-
       console.log(`Firebase: Found ${metaSnapshot.docs.length} changed metadata documents`);
 
-      const metadataToSave: WritingMetadata[] = [];
-
+      // Build a map of remote changes
+      const remoteChanges = new Map<string, WritingMetadata>();
       for (const docSnap of metaSnapshot.docs) {
         const data = docSnap.data();
         const remoteMeta = this.parseRemoteMetadata(docSnap.id, data);
-        const localMeta = await localStorageService.getWritingMetadata(docSnap.id);
+        remoteChanges.set(docSnap.id, remoteMeta);
+      }
+
+      // Upload unsynced local writings with proper conflict resolution
+      await this.uploadUnsyncedWritingsWithConflictResolution(remoteChanges);
+
+      const metadataToSave: WritingMetadata[] = [];
+
+      // Process remote changes
+      for (const [id, remoteMeta] of remoteChanges) {
+        const localMeta = await localStorageService.getWritingMetadata(id);
 
         if (!localMeta) {
           // New from remote
           if (!isDeleted(remoteMeta)) {
             metadataToSave.push(remoteMeta);
           }
-        } else if (!localMeta.isSynced) {
-          // Local was just uploaded - skip
-          continue;
-        } else if (new Date(remoteMeta.updatedAt) > new Date(localMeta.updatedAt)) {
-          // Remote is newer
-          metadataToSave.push(remoteMeta);
+        } else if (localMeta.isSynced) {
+          // Local is synced - check if remote is newer
+          const localTime = new Date(localMeta.updatedAt).getTime();
+          const remoteTime = new Date(remoteMeta.updatedAt).getTime();
+
+          if (remoteTime > localTime) {
+            metadataToSave.push(remoteMeta);
+          }
         }
+        // Note: Unsynced local writings were already handled in uploadUnsyncedWritingsWithConflictResolution
       }
 
       // Batch save metadata
@@ -298,7 +338,7 @@ class FirebaseSyncService {
 
     try {
       this.isSyncing = true;
-      await this.uploadUnsyncedWritings();
+      await this.uploadUnsyncedWritingsWithConflictResolution();
       this.notifySyncChanged();
     } catch (e) {
       console.error('Sync error:', e);
@@ -307,25 +347,73 @@ class FirebaseSyncService {
     }
   }
 
-  private async uploadUnsyncedWritings(): Promise<void> {
+  /**
+   * Upload unsynced writings with proper timestamp-based conflict resolution.
+   * If a remote version exists and is newer, download it instead of uploading.
+   * @param remoteChanges Optional map of already-fetched remote changes (for incremental sync)
+   */
+  private async uploadUnsyncedWritingsWithConflictResolution(
+    remoteChanges?: Map<string, WritingMetadata>
+  ): Promise<void> {
+    const metaCollection = collection(db, 'writings_meta');
     const metadata = await localStorageService.getAllWritingsMetadataIncludingDeleted();
-    const unsyncedCount = metadata.filter((m) => !m.isSynced).length;
+    const unsyncedMeta = metadata.filter((m) => !m.isSynced);
     
-    console.log(`Firebase: Found ${metadata.length} writings, ${unsyncedCount} unsynced`);
+    console.log(`Firebase: Found ${metadata.length} writings, ${unsyncedMeta.length} unsynced`);
 
-    for (const meta of metadata) {
-      if (!meta.isSynced) {
-        try {
-          const writing = await localStorageService.getFullWriting(meta.id);
-          if (writing) {
-            console.log(`Firebase: Uploading "${writing.title}"...`);
+    const metadataToSave: WritingMetadata[] = [];
+
+    for (const localMeta of unsyncedMeta) {
+      try {
+        const writing = await localStorageService.getFullWriting(localMeta.id);
+        if (!writing) continue;
+
+        // Check if we already have remote data from incremental sync
+        let remoteMeta: WritingMetadata | null = null;
+        if (remoteChanges?.has(localMeta.id)) {
+          remoteMeta = remoteChanges.get(localMeta.id)!;
+        } else {
+          // Fetch remote version to compare timestamps
+          const remoteDocRef = doc(metaCollection, localMeta.id);
+          const remoteDocSnap = await getDoc(remoteDocRef);
+          if (remoteDocSnap.exists()) {
+            remoteMeta = this.parseRemoteMetadata(remoteDocSnap.id, remoteDocSnap.data());
+          }
+        }
+
+        if (!remoteMeta) {
+          // No remote version - safe to upload
+          console.log(`Firebase: Uploading new "${writing.title}"...`);
+          await this.uploadWriting(writing);
+          console.log(`Firebase: Successfully uploaded "${writing.title}"`);
+        } else {
+          // Remote exists - compare timestamps (last write wins)
+          const localTime = new Date(localMeta.updatedAt).getTime();
+          const remoteTime = new Date(remoteMeta.updatedAt).getTime();
+
+          if (localTime > remoteTime) {
+            // Local is newer - upload it
+            console.log(`Firebase: Uploading "${writing.title}" (local is newer: ${localMeta.updatedAt} > ${remoteMeta.updatedAt})...`);
             await this.uploadWriting(writing);
             console.log(`Firebase: Successfully uploaded "${writing.title}"`);
+          } else if (remoteTime > localTime) {
+            // Remote is newer - queue for download (discard local changes)
+            console.log(`Firebase: Discarding local changes for "${writing.title}" (remote is newer: ${remoteMeta.updatedAt} > ${localMeta.updatedAt})`);
+            metadataToSave.push(remoteMeta);
+          } else {
+            // Same timestamp - mark local as synced
+            const syncedWriting: Writing = { ...writing, isSynced: true };
+            await localStorageService.saveWriting(syncedWriting);
           }
-        } catch (e) {
-          console.error(`Firebase ERROR syncing writing ${meta.id}:`, e);
         }
+      } catch (e) {
+        console.error(`Firebase ERROR syncing writing ${localMeta.id}:`, e);
       }
+    }
+
+    // Apply remote updates for writings where remote was newer
+    if (metadataToSave.length > 0) {
+      await localStorageService.batchUpdateWritingsMetadata(metadataToSave);
     }
   }
 
@@ -479,42 +567,87 @@ class FirebaseSyncService {
       const localBooks = await localStorageService.getAllBooksIncludingDeleted();
       const localMap = new Map(localBooks.map((b) => [b.id, b]));
 
-      // Upload any unsynced local books first
-      const unsyncedBooks = localBooks.filter((b) => !b.isSynced);
-      if (unsyncedBooks.length > 0) {
-        console.log(`Firebase: Uploading ${unsyncedBooks.length} unsynced local books first...`);
-        for (const book of unsyncedBooks) {
-          await this.uploadBook(book);
-          console.log(`Firebase: Uploaded unsynced book "${book.title}"`);
-        }
-      }
-
-      // Download ALL books from Firestore
+      // Download ALL books from Firestore FIRST to know what's on remote
       const booksSnapshot = await getDocs(booksCollection);
       console.log(`Firebase: Downloaded ${booksSnapshot.docs.length} books from Firestore`);
 
-      let hasChanges = false;
-
+      // Build a map of remote books
+      const remoteMap = new Map<string, Book>();
       for (const docSnap of booksSnapshot.docs) {
         const data = docSnap.data();
         const remoteBook = this.parseRemoteBook(docSnap.id, data);
-        const localBook = localMap.get(docSnap.id);
+        remoteMap.set(docSnap.id, remoteBook);
+      }
+
+      let hasChanges = false;
+
+      // Process unsynced local books with proper conflict resolution
+      const unsyncedBooks = localBooks.filter((b) => !b.isSynced);
+      if (unsyncedBooks.length > 0) {
+        console.log(`Firebase: Processing ${unsyncedBooks.length} unsynced local books...`);
+        for (const localBook of unsyncedBooks) {
+          const remoteBook = remoteMap.get(localBook.id);
+
+          if (!remoteBook) {
+            // No remote version - safe to upload
+            await this.uploadBook(localBook);
+            console.log(`Firebase: Uploaded new book "${localBook.title}"`);
+          } else {
+            // Remote version exists - compare timestamps (last write wins)
+            const localTime = new Date(localBook.updatedAt).getTime();
+            const remoteTime = new Date(remoteBook.updatedAt).getTime();
+
+            if (localTime > remoteTime) {
+              // Local is newer - upload it
+              await this.uploadBook(localBook);
+              console.log(`Firebase: Uploaded book "${localBook.title}" (local is newer: ${localBook.updatedAt} > ${remoteBook.updatedAt})`);
+            } else if (remoteTime > localTime) {
+              // Remote is newer - download it (discard local changes)
+              await localStorageService.saveBook(remoteBook);
+              console.log(`Firebase: Downloaded book "${remoteBook.title}" (remote is newer: ${remoteBook.updatedAt} > ${localBook.updatedAt})`);
+              hasChanges = true;
+            } else {
+              // Same timestamp - mark local as synced (they should be identical)
+              const syncedBook: Book = { ...localBook, isSynced: true };
+              await localStorageService.saveBook(syncedBook);
+              console.log(`Firebase: Book "${localBook.title}" already in sync`);
+            }
+          }
+        }
+      }
+
+      // Process remote books that are new or newer than local
+      for (const [remoteId, remoteBook] of remoteMap) {
+        const localBook = localMap.get(remoteId);
 
         if (!localBook) {
-          // New book from remote - save it
+          // New book from remote - save it (unless deleted)
           if (!remoteBook.deletedAt) {
             await localStorageService.saveBook(remoteBook);
             console.log(`Firebase: Downloaded new book "${remoteBook.title}"`);
             hasChanges = true;
           }
-        } else if (!localBook.isSynced) {
-          // Local was just uploaded - skip
-          continue;
-        } else if (new Date(remoteBook.updatedAt) > new Date(localBook.updatedAt)) {
-          // Remote is newer - update local
-          await localStorageService.saveBook(remoteBook);
-          console.log(`Firebase: Updated book "${remoteBook.title}" from remote`);
-          hasChanges = true;
+        } else if (localBook.isSynced) {
+          // Local is already synced - check if remote is newer
+          const localTime = new Date(localBook.updatedAt).getTime();
+          const remoteTime = new Date(remoteBook.updatedAt).getTime();
+
+          if (remoteTime > localTime) {
+            // Remote is newer - update local
+            await localStorageService.saveBook(remoteBook);
+            console.log(`Firebase: Updated book "${remoteBook.title}" from remote`);
+            hasChanges = true;
+          }
+        }
+        // Note: Unsynced local books were already handled above
+      }
+
+      // Upload any local books that don't exist on remote at all
+      for (const localBook of localBooks) {
+        if (!localBook.isSynced && !remoteMap.has(localBook.id)) {
+          // This case should already be handled above, but just in case
+          await this.uploadBook(localBook);
+          console.log(`Firebase: Uploaded orphan book "${localBook.title}"`);
         }
       }
 
@@ -532,17 +665,46 @@ class FirebaseSyncService {
     if (!this.isOnline || !this.isInitialized) return;
 
     try {
+      const booksCollection = collection(db, 'books');
       const books = await localStorageService.getAllBooksIncludingDeleted();
       const unsyncedBooks = books.filter((b) => !b.isSynced);
 
       console.log(`Firebase: Found ${unsyncedBooks.length} unsynced books`);
 
-      for (const book of unsyncedBooks) {
+      for (const localBook of unsyncedBooks) {
         try {
-          await this.uploadBook(book);
-          console.log(`Firebase: Uploaded book "${book.title}"`);
+          // Fetch remote version to compare timestamps
+          const remoteDocRef = doc(booksCollection, localBook.id);
+          const remoteDocSnap = await getDoc(remoteDocRef);
+
+          if (!remoteDocSnap.exists()) {
+            // No remote version - safe to upload
+            await this.uploadBook(localBook);
+            console.log(`Firebase: Uploaded book "${localBook.title}"`);
+          } else {
+            // Remote exists - compare timestamps (last write wins)
+            const remoteData = remoteDocSnap.data();
+            const remoteUpdatedAt = remoteData.updatedAt as string;
+            const localTime = new Date(localBook.updatedAt).getTime();
+            const remoteTime = new Date(remoteUpdatedAt).getTime();
+
+            if (localTime > remoteTime) {
+              // Local is newer - upload it
+              await this.uploadBook(localBook);
+              console.log(`Firebase: Uploaded book "${localBook.title}" (local is newer)`);
+            } else if (remoteTime > localTime) {
+              // Remote is newer - download it instead
+              const remoteBook = this.parseRemoteBook(remoteDocSnap.id, remoteData);
+              await localStorageService.saveBook(remoteBook);
+              console.log(`Firebase: Downloaded book "${remoteBook.title}" (remote is newer)`);
+            } else {
+              // Same timestamp - just mark as synced
+              const syncedBook: Book = { ...localBook, isSynced: true };
+              await localStorageService.saveBook(syncedBook);
+            }
+          }
         } catch (e) {
-          console.error(`Firebase ERROR syncing book ${book.id}:`, e);
+          console.error(`Firebase ERROR syncing book ${localBook.id}:`, e);
         }
       }
 
@@ -593,16 +755,41 @@ class FirebaseSyncService {
           const remoteBook = this.parseRemoteBook(change.doc.id, data);
           const localBook = await localStorageService.getBook(change.doc.id);
 
-          // Apply if remote is newer or local doesn't exist
-          if (!localBook || new Date(remoteBook.updatedAt) > new Date(localBook.updatedAt)) {
+          if (!localBook) {
+            // New book from remote - save it
             await localStorageService.saveBook(remoteBook);
             hasChanges = true;
+          } else {
+            // Compare timestamps - last write wins
+            const localTime = new Date(localBook.updatedAt).getTime();
+            const remoteTime = new Date(remoteBook.updatedAt).getTime();
+
+            if (remoteTime > localTime) {
+              // Remote is newer - apply it (even if local is unsynced, remote wins)
+              await localStorageService.saveBook(remoteBook);
+              console.log(`Firebase: Real-time update - book "${remoteBook.title}" updated from remote (${remoteBook.updatedAt} > ${localBook.updatedAt})`);
+              hasChanges = true;
+            } else if (localTime > remoteTime && !localBook.isSynced) {
+              // Local is newer and unsynced - upload it
+              await this.uploadBook(localBook);
+              console.log(`Firebase: Real-time update - book "${localBook.title}" uploaded (local is newer)`);
+            }
+            // If timestamps are equal or local is newer and synced, no action needed
           }
         } else if (change.type === 'removed') {
           const localBook = await localStorageService.getBook(change.doc.id);
-          if (localBook && localBook.isSynced) {
-            await localStorageService.permanentlyDeleteBook(change.doc.id);
-            hasChanges = true;
+          if (localBook) {
+            // Only permanently delete if local is synced (not modified locally)
+            if (localBook.isSynced) {
+              await localStorageService.permanentlyDeleteBook(change.doc.id);
+              console.log(`Firebase: Real-time update - book "${localBook.title}" permanently deleted`);
+              hasChanges = true;
+            } else {
+              // Local has unsynced changes - this is a conflict
+              // For now, we'll re-upload the local version
+              console.log(`Firebase: Real-time update - conflict detected for book "${localBook.title}" (deleted on remote but modified locally). Re-uploading local version.`);
+              await this.uploadBook(localBook);
+            }
           }
         }
       }
@@ -707,14 +894,44 @@ class FirebaseSyncService {
           const remoteMeta = this.parseRemoteMetadata(change.doc.id, data);
           const localMeta = await localStorageService.getWritingMetadata(change.doc.id);
 
-          // Apply if remote is newer or local doesn't exist
-          if (!localMeta || new Date(remoteMeta.updatedAt) > new Date(localMeta.updatedAt)) {
+          if (!localMeta) {
+            // New from remote - save it
             metadataToSave.push(remoteMeta);
+          } else {
+            // Compare timestamps - last write wins
+            const localTime = new Date(localMeta.updatedAt).getTime();
+            const remoteTime = new Date(remoteMeta.updatedAt).getTime();
+
+            if (remoteTime > localTime) {
+              // Remote is newer - apply it (even if local is unsynced, remote wins)
+              metadataToSave.push(remoteMeta);
+              console.log(`Firebase: Real-time update - writing "${remoteMeta.title}" updated from remote (${remoteMeta.updatedAt} > ${localMeta.updatedAt})`);
+            } else if (localTime > remoteTime && !localMeta.isSynced) {
+              // Local is newer and unsynced - upload it
+              const localWriting = await localStorageService.getFullWriting(localMeta.id);
+              if (localWriting) {
+                await this.uploadWriting(localWriting);
+                console.log(`Firebase: Real-time update - writing "${localWriting.title}" uploaded (local is newer)`);
+              }
+            }
+            // If timestamps are equal or local is newer and synced, no action needed
           }
         } else if (change.type === 'removed') {
           const localMeta = await localStorageService.getWritingMetadata(change.doc.id);
-          if (localMeta && localMeta.isSynced) {
-            idsToRemove.push(change.doc.id);
+          if (localMeta) {
+            // Only permanently delete if local is synced (not modified locally)
+            if (localMeta.isSynced) {
+              idsToRemove.push(change.doc.id);
+              console.log(`Firebase: Real-time update - writing "${localMeta.title}" permanently deleted`);
+            } else {
+              // Local has unsynced changes - this is a conflict
+              // For now, we'll re-upload the local version
+              const localWriting = await localStorageService.getFullWriting(localMeta.id);
+              if (localWriting) {
+                console.log(`Firebase: Real-time update - conflict detected for writing "${localMeta.title}" (deleted on remote but modified locally). Re-uploading local version.`);
+                await this.uploadWriting(localWriting);
+              }
+            }
           }
         }
       }
