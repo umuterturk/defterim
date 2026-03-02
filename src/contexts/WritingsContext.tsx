@@ -179,7 +179,9 @@ export function WritingsProvider({ children }: { children: ReactNode }) {
     return () => {
       unsubscribeSync();
       unsubscribeLoading();
-      firebaseSyncService.dispose();
+      // Do NOT call firebaseSyncService.dispose() here — it's a singleton
+      // that outlives the component. Disposing it would tear down Firestore
+      // listeners, and re-initialization would create duplicate connections.
     };
   }, []);
 

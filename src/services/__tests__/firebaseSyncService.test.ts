@@ -284,6 +284,28 @@ describe('conflict resolution', () => {
   });
 });
 
+describe('initialize idempotency', () => {
+  it('does not create duplicate listeners when initialize is called twice', async () => {
+    const lastSync = new Date('2025-06-15T12:00:00.000Z');
+    mockLocalStorage.getLastSyncTime.mockResolvedValue(lastSync);
+    mockLocalStorage.getAllWritingsMetadataIncludingDeleted.mockResolvedValue([]);
+    mockLocalStorage.getAllBooksIncludingDeleted.mockResolvedValue([]);
+    mockGetDocs.mockResolvedValue({ docs: [] });
+
+    // First init — sets up listeners
+    await firebaseSyncService.initialize();
+
+    const snapshotCallsAfterFirst = mockOnSnapshot.mock.calls.length;
+    expect(snapshotCallsAfterFirst).toBeGreaterThanOrEqual(2); // metadata + books
+
+    // Second init — should be a no-op (already initialized)
+    await firebaseSyncService.initialize();
+
+    // onSnapshot should NOT be called again
+    expect(mockOnSnapshot.mock.calls.length).toBe(snapshotCallsAfterFirst);
+  });
+});
+
 describe('offline behavior', () => {
   it('skips Firebase sync when offline', async () => {
     Object.defineProperty(navigator, 'onLine', { value: false, writable: true, configurable: true });

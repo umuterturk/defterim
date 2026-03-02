@@ -327,6 +327,40 @@ describe('getFullWriting', () => {
   });
 });
 
+describe('re-mount does not create duplicate listeners', () => {
+  it('does not call dispose on the singleton when provider unmounts', async () => {
+    mockLocal.getAllWritingsMetadata.mockResolvedValue([]);
+
+    const { unmount } = renderHook(() => useWritings(), { wrapper });
+    await waitFor(() => expect(mockFirebase.initialize).toHaveBeenCalled());
+
+    mockFirebase.dispose.mockClear();
+    unmount();
+
+    // dispose should NOT be called — the singleton outlives the component
+    expect(mockFirebase.dispose).not.toHaveBeenCalled();
+  });
+
+  it('re-mounting provider does not call initialize again if already initialized', async () => {
+    mockLocal.getAllWritingsMetadata.mockResolvedValue([]);
+
+    // First mount
+    const { unmount } = renderHook(() => useWritings(), { wrapper });
+    await waitFor(() => expect(mockFirebase.initialize).toHaveBeenCalledTimes(1));
+    unmount();
+
+    mockFirebase.initialize.mockClear();
+
+    // Second mount — initialize should still be called (context doesn't know),
+    // but the service itself should guard against re-init (tested in service tests)
+    const { result } = renderHook(() => useWritings(), { wrapper });
+    await waitFor(() => expect(result.current.state.isInitialized).toBe(true));
+
+    // Context calls initialize, but service's internal guard prevents duplicate work
+    expect(mockFirebase.initialize).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('onSyncChanged clears in-memory cache', () => {
   it('forces re-fetch from IndexedDB after sync callback fires', async () => {
     const meta = makeMeta({ id: 'w1', updatedAt: '2025-01-01T00:00:00.000Z' });

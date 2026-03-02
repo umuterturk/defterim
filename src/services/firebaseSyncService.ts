@@ -48,6 +48,11 @@ class FirebaseSyncService {
   }
 
   async initialize(): Promise<boolean> {
+    // Prevent re-initialization if already initialized
+    if (this.isInitialized) {
+      return true;
+    }
+
     // Check if this is first sync
     const lastSync = await localStorageService.getLastSyncTime();
     this.isFirstSync = lastSync === null;
