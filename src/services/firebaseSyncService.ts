@@ -100,11 +100,11 @@ class FirebaseSyncService {
       }, 30000);
 
       // Listen to remote metadata changes
-      this.listenToRemoteMetadataChanges();
+      await this.listenToRemoteMetadataChanges();
 
       // Sync books from Firestore (download + upload)
       await this.performFullBooksSync();
-      this.listenToRemoteBookChanges();
+      await this.listenToRemoteBookChanges();
 
       this.isInitialized = true;
       this.notifyLoadingChanged(false);
@@ -732,15 +732,20 @@ class FirebaseSyncService {
     await localStorageService.saveBook(syncedBook);
   }
 
-  private listenToRemoteBookChanges(): void {
+  private async listenToRemoteBookChanges(): Promise<void> {
     if (this.bookRemoteListener) {
       this.bookRemoteListener();
     }
 
     const booksCollection = collection(db, 'books');
+
+    // Only listen for books updated since last sync
+    const lastSync = await localStorageService.getLastSyncTime();
+    const sinceTime = lastSync?.toISOString() ?? new Date(0).toISOString();
+    const q = query(booksCollection, where('updatedAt', '>', sinceTime));
     let isInitialLoad = true;
 
-    this.bookRemoteListener = onSnapshot(booksCollection, async (snapshot) => {
+    this.bookRemoteListener = onSnapshot(q, async (snapshot) => {
       // Skip initial snapshot
       if (isInitialLoad) {
         isInitialLoad = false;
@@ -870,16 +875,22 @@ class FirebaseSyncService {
 
   // ========== REAL-TIME LISTENER ==========
 
-  private listenToRemoteMetadataChanges(): void {
+  private async listenToRemoteMetadataChanges(): Promise<void> {
     if (this.remoteListener) {
       this.remoteListener();
     }
 
     const metaCollection = collection(db, 'writings_meta');
+
+    // Only listen for documents updated since last sync
+    // This avoids downloading the entire collection on every page refresh
+    const lastSync = await localStorageService.getLastSyncTime();
+    const sinceTime = lastSync?.toISOString() ?? new Date(0).toISOString();
+    const q = query(metaCollection, where('updatedAt', '>', sinceTime));
     let isInitialLoad = true;
 
-    this.remoteListener = onSnapshot(metaCollection, async (snapshot) => {
-      // Skip initial snapshot (we already handled it in performFullSync)
+    this.remoteListener = onSnapshot(q, async (snapshot) => {
+      // Skip initial snapshot (already handled by performFullSync/performIncrementalSync)
       if (isInitialLoad) {
         isInitialLoad = false;
         return;

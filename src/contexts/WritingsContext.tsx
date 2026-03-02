@@ -165,6 +165,8 @@ export function WritingsProvider({ children }: { children: ReactNode }) {
 
     // Listen for sync changes
     const unsubscribeSync = firebaseSyncService.onSyncChanged(async () => {
+      // Clear in-memory cache so stale bodies are re-fetched from IndexedDB/Firebase
+      writingsCache.current.clear();
       const writings = await localStorageService.getAllWritingsMetadata();
       dispatch({ type: 'SET_WRITINGS', payload: writings });
     });
@@ -232,18 +234,32 @@ export function WritingsProvider({ children }: { children: ReactNode }) {
     }
 
     // 1. Check in-memory cache first (instant)
+    // Validate against metadata to ensure cache isn't stale
+    // (metadata index is updated by sync before writingsCache is cleared)
     const cached = writingsCache.current.get(id);
     if (cached) {
-      return cached;
+      const meta = await localStorageService.getWritingMetadata(id);
+      const cacheIsFresh = !meta ||
+        new Date(cached.updatedAt).getTime() >= new Date(meta.updatedAt).getTime();
+      if (cacheIsFresh) {
+        return cached;
+      }
+      // Cache is stale, remove it and fall through to IndexedDB/Firebase
+      writingsCache.current.delete(id);
     }
 
     // 2. Check local storage (IndexedDB - fast)
     let writing = await localStorageService.getFullWriting(id);
 
     if (writing) {
-      // Local copy exists - use it if it's synced (up to date)
-      // If not synced but we're online, compare with Firebase for conflict resolution
-      if (!writing.isSynced && navigator.onLine) {
+      // Check if body is stale: metadata may have been updated by sync
+      // while the body in IndexedDB is still the old version
+      const metadata = await localStorageService.getWritingMetadata(id);
+      const bodyIsStale = metadata &&
+        new Date(metadata.updatedAt).getTime() > new Date(writing.updatedAt).getTime();
+
+      if ((bodyIsStale || !writing.isSynced) && navigator.onLine) {
+        // Body is outdated or has unsynced local changes - fetch from Firebase
         const firebaseWriting = await firebaseSyncService.fetchWritingFromFirebase(id);
         if (firebaseWriting) {
           const localTime = new Date(writing.updatedAt).getTime();
@@ -260,7 +276,6 @@ export function WritingsProvider({ children }: { children: ReactNode }) {
 
       // Ensure stars field exists
       if (writing.stars === undefined) {
-        const metadata = await localStorageService.getWritingMetadata(id);
         writing = { ...writing, stars: metadata?.stars ?? 0 };
       }
 
