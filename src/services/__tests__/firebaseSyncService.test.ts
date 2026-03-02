@@ -200,7 +200,7 @@ describe('listenToRemoteBookChanges (via initialize)', () => {
 });
 
 describe('conflict resolution', () => {
-  it('uploads local writing when local is newer', async () => {
+  it('uploads local writing when local is newer (incremental: remote in remoteChanges)', async () => {
     const localMeta = makeMeta({
       id: 'w1',
       isSynced: false,
@@ -217,29 +217,28 @@ describe('conflict resolution', () => {
     mockLocalStorage.getAllWritingsMetadataIncludingDeleted.mockResolvedValue([localMeta]);
     mockLocalStorage.getFullWriting.mockResolvedValue(localWriting);
 
+    // Remote version exists but is older — returned by incremental query
     const remoteDocData = {
       title: 'Test',
       preview: 'Body text',
       createdAt: '2025-01-01T00:00:00.000Z',
-      updatedAt: '2025-06-01T00:00:00.000Z',
+      updatedAt: '2025-06-01T12:00:00.000Z', // older but changed since lastSync
       type: 'siir',
       stars: 0,
     };
 
-    mockGetDocs.mockResolvedValue({ docs: [] });
-
-    mockGetDoc.mockResolvedValue({
-      exists: () => true,
-      id: 'w1',
-      data: () => remoteDocData,
+    // Incremental query returns the remote doc (it changed since lastSync)
+    mockGetDocs.mockResolvedValue({
+      docs: [{ id: 'w1', data: () => remoteDocData }],
     });
 
     await firebaseSyncService.performIncrementalSync();
 
+    // setDoc should be called to upload local writing (it's newer)
     expect(mockSetDoc).toHaveBeenCalled();
   });
 
-  it('downloads remote writing when remote is newer', async () => {
+  it('downloads remote writing when remote is newer (incremental: remote in remoteChanges)', async () => {
     const localMeta = makeMeta({
       id: 'w1',
       isSynced: false,
@@ -257,30 +256,60 @@ describe('conflict resolution', () => {
     mockLocalStorage.getFullWriting.mockResolvedValue(localWriting);
     mockLocalStorage.getWritingMetadata.mockResolvedValue(localMeta);
 
+    // Remote is newer — returned by incremental query
     const remoteDocData = {
       title: 'Test Updated',
       preview: 'Updated body',
       createdAt: '2025-01-01T00:00:00.000Z',
-      updatedAt: '2025-06-02T00:00:00.000Z',
+      updatedAt: '2025-06-02T00:00:00.000Z', // newer
       type: 'siir',
       stars: 0,
     };
 
-    mockGetDocs.mockResolvedValue({ docs: [] });
-
-    mockGetDoc.mockResolvedValue({
-      exists: () => true,
-      id: 'w1',
-      data: () => remoteDocData,
+    // Incremental query returns the newer remote doc
+    mockGetDocs.mockResolvedValue({
+      docs: [{ id: 'w1', data: () => remoteDocData }],
     });
 
     await firebaseSyncService.performIncrementalSync();
 
+    // batchUpdateWritingsMetadata should be called with the remote metadata
     expect(mockLocalStorage.batchUpdateWritingsMetadata).toHaveBeenCalled();
     const savedBatch = mockLocalStorage.batchUpdateWritingsMetadata.mock.calls[0][0] as WritingMetadata[];
     expect(savedBatch.some((m: WritingMetadata) => m.updatedAt === '2025-06-02T00:00:00.000Z')).toBe(true);
 
+    // setDoc should NOT be called (remote is newer, so no upload)
     expect(mockSetDoc).not.toHaveBeenCalled();
+  });
+});
+
+describe('batch fetching (no N+1 getDoc calls)', () => {
+  it('periodic sync uses a single getDocs instead of per-writing getDoc', async () => {
+    // Initialize the service first so syncUnsyncedToCloud can run
+    const lastSync = new Date('2025-06-01T00:00:00.000Z');
+    mockLocalStorage.getLastSyncTime.mockResolvedValue(lastSync);
+    mockLocalStorage.getAllWritingsMetadataIncludingDeleted.mockResolvedValue([]);
+    mockLocalStorage.getAllBooksIncludingDeleted.mockResolvedValue([]);
+    mockGetDocs.mockResolvedValue({ docs: [] });
+
+    await firebaseSyncService.initialize();
+    vi.clearAllMocks();
+
+    // Now set up unsynced writings for periodic sync
+    const unsyncedMeta = [
+      makeMeta({ id: 'w1', isSynced: false, updatedAt: '2025-06-02T00:00:00.000Z' }),
+      makeMeta({ id: 'w2', isSynced: false, updatedAt: '2025-06-02T00:00:00.000Z' }),
+      makeMeta({ id: 'w3', isSynced: false, updatedAt: '2025-06-02T00:00:00.000Z' }),
+    ];
+    mockLocalStorage.getAllWritingsMetadataIncludingDeleted.mockResolvedValue(unsyncedMeta);
+    mockLocalStorage.getFullWriting.mockResolvedValue(makeWriting({ isSynced: false }));
+    mockGetDocs.mockResolvedValue({ docs: [] }); // batch fetch returns empty (new writings)
+
+    await firebaseSyncService.syncUnsyncedToCloud();
+
+    // Should use getDocs (batch) NOT getDoc (individual)
+    expect(mockGetDoc).not.toHaveBeenCalled();
+    expect(mockGetDocs).toHaveBeenCalledTimes(1);
   });
 });
 

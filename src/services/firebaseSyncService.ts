@@ -363,8 +363,24 @@ class FirebaseSyncService {
     const metaCollection = collection(db, 'writings_meta');
     const metadata = await localStorageService.getAllWritingsMetadataIncludingDeleted();
     const unsyncedMeta = metadata.filter((m) => !m.isSynced);
-    
+
+    if (unsyncedMeta.length === 0) return;
+
     console.log(`Firebase: Found ${metadata.length} writings, ${unsyncedMeta.length} unsynced`);
+
+    // Batch-fetch all remote metadata in a single query instead of
+    // individual getDoc calls per writing (avoids N+1 Firestore requests)
+    let remoteMap: Map<string, WritingMetadata>;
+    if (remoteChanges) {
+      remoteMap = remoteChanges;
+    } else {
+      remoteMap = new Map();
+      const metaSnapshot = await getDocs(metaCollection);
+      for (const docSnap of metaSnapshot.docs) {
+        const remoteMeta = this.parseRemoteMetadata(docSnap.id, docSnap.data());
+        remoteMap.set(docSnap.id, remoteMeta);
+      }
+    }
 
     const metadataToSave: WritingMetadata[] = [];
 
@@ -373,18 +389,7 @@ class FirebaseSyncService {
         const writing = await localStorageService.getFullWriting(localMeta.id);
         if (!writing) continue;
 
-        // Check if we already have remote data from incremental sync
-        let remoteMeta: WritingMetadata | null = null;
-        if (remoteChanges?.has(localMeta.id)) {
-          remoteMeta = remoteChanges.get(localMeta.id)!;
-        } else {
-          // Fetch remote version to compare timestamps
-          const remoteDocRef = doc(metaCollection, localMeta.id);
-          const remoteDocSnap = await getDoc(remoteDocRef);
-          if (remoteDocSnap.exists()) {
-            remoteMeta = this.parseRemoteMetadata(remoteDocSnap.id, remoteDocSnap.data());
-          }
-        }
+        const remoteMeta = remoteMap.get(localMeta.id) ?? null;
 
         if (!remoteMeta) {
           // No remote version - safe to upload
@@ -490,7 +495,7 @@ class FirebaseSyncService {
 
       // Get all local writings metadata
       const localMetadata = await localStorageService.getAllWritingsMetadataIncludingDeleted();
-      
+
       // Filter to only synced writings that have stars
       const writingsWithStars = localMetadata.filter(
         (m) => m.isSynced && m.stars !== undefined && m.stars > 0
@@ -503,58 +508,65 @@ class FirebaseSyncService {
 
       console.log(`Firebase: Checking ${writingsWithStars.length} writings with local stars...`);
 
-      let syncedCount = 0;
+      // Batch-fetch all remote metadata in a single query
+      const metaSnapshot = await getDocs(metaCollection);
+      const remoteMetaMap = new Map<string, Record<string, unknown>>();
+      for (const docSnap of metaSnapshot.docs) {
+        remoteMetaMap.set(docSnap.id, docSnap.data());
+      }
 
+      // Find which writings need star updates
+      const needsStarSync: Array<{ localMeta: WritingMetadata; remoteData: Record<string, unknown> }> = [];
       for (const localMeta of writingsWithStars) {
+        const remoteData = remoteMetaMap.get(localMeta.id);
+        if (!remoteData) continue;
+        const remoteStars = (remoteData.stars as number) ?? 0;
+        if (localMeta.stars! > remoteStars) {
+          needsStarSync.push({ localMeta, remoteData });
+        }
+      }
+
+      if (needsStarSync.length === 0) {
+        console.log('Firebase: All local stars already synced');
+        return;
+      }
+
+      // Only fetch full writings collection if we actually need to update stars
+      const writingsSnapshot = await getDocs(writingsCollection);
+      const remoteWritingsMap = new Map<string, Record<string, unknown>>();
+      for (const docSnap of writingsSnapshot.docs) {
+        remoteWritingsMap.set(docSnap.id, docSnap.data());
+      }
+
+      let syncedCount = 0;
+      for (const { localMeta, remoteData } of needsStarSync) {
         try {
-          // Fetch the current Firebase metadata to check if stars need syncing
-          const metaDocRef = doc(metaCollection, localMeta.id);
-          const metaDocSnap = await getDoc(metaDocRef);
+          console.log(`Firebase: Syncing stars for "${localMeta.title}" (local: ${localMeta.stars}, remote: ${(remoteData.stars as number) ?? 0})`);
 
-          if (!metaDocSnap.exists()) {
-            // Metadata doesn't exist in Firebase - skip (will be synced normally)
-            continue;
-          }
+          // Update metadata with stars
+          await setDoc(doc(metaCollection, localMeta.id), {
+            ...remoteData,
+            stars: localMeta.stars,
+            updatedAt: new Date().toISOString(),
+          });
 
-          const remoteData = metaDocSnap.data();
-          const remoteStars = (remoteData.stars as number) ?? 0;
-
-          // Only sync if local has stars but remote doesn't (or has fewer)
-          if (localMeta.stars! > remoteStars) {
-            console.log(`Firebase: Syncing stars for "${localMeta.title}" (local: ${localMeta.stars}, remote: ${remoteStars})`);
-
-            // Update metadata with stars
-            await setDoc(metaDocRef, {
-              ...remoteData,
+          // Also update full writing document if it exists
+          const writingData = remoteWritingsMap.get(localMeta.id);
+          if (writingData) {
+            await setDoc(doc(writingsCollection, localMeta.id), {
+              ...writingData,
               stars: localMeta.stars,
               updatedAt: new Date().toISOString(),
             });
-
-            // Also update full writing document if it exists
-            const writingDocRef = doc(writingsCollection, localMeta.id);
-            const writingDocSnap = await getDoc(writingDocRef);
-            
-            if (writingDocSnap.exists()) {
-              const writingData = writingDocSnap.data();
-              await setDoc(writingDocRef, {
-                ...writingData,
-                stars: localMeta.stars,
-                updatedAt: new Date().toISOString(),
-              });
-            }
-
-            syncedCount++;
           }
+
+          syncedCount++;
         } catch (e) {
           console.error(`Firebase: Error syncing stars for ${localMeta.id}:`, e);
         }
       }
 
-      if (syncedCount > 0) {
-        console.log(`Firebase: Synced stars for ${syncedCount} writings`);
-      } else {
-        console.log('Firebase: All local stars already synced');
-      }
+      console.log(`Firebase: Synced stars for ${syncedCount} writings`);
     } catch (e) {
       console.error('Firebase: Error syncing local stars:', e);
     }
@@ -674,24 +686,29 @@ class FirebaseSyncService {
       const books = await localStorageService.getAllBooksIncludingDeleted();
       const unsyncedBooks = books.filter((b) => !b.isSynced);
 
+      if (unsyncedBooks.length === 0) return;
+
       console.log(`Firebase: Found ${unsyncedBooks.length} unsynced books`);
+
+      // Batch-fetch all remote books in a single query
+      const booksSnapshot = await getDocs(booksCollection);
+      const remoteMap = new Map<string, Book>();
+      for (const docSnap of booksSnapshot.docs) {
+        remoteMap.set(docSnap.id, this.parseRemoteBook(docSnap.id, docSnap.data()));
+      }
 
       for (const localBook of unsyncedBooks) {
         try {
-          // Fetch remote version to compare timestamps
-          const remoteDocRef = doc(booksCollection, localBook.id);
-          const remoteDocSnap = await getDoc(remoteDocRef);
+          const remoteBook = remoteMap.get(localBook.id);
 
-          if (!remoteDocSnap.exists()) {
+          if (!remoteBook) {
             // No remote version - safe to upload
             await this.uploadBook(localBook);
             console.log(`Firebase: Uploaded book "${localBook.title}"`);
           } else {
             // Remote exists - compare timestamps (last write wins)
-            const remoteData = remoteDocSnap.data();
-            const remoteUpdatedAt = remoteData.updatedAt as string;
             const localTime = new Date(localBook.updatedAt).getTime();
-            const remoteTime = new Date(remoteUpdatedAt).getTime();
+            const remoteTime = new Date(remoteBook.updatedAt).getTime();
 
             if (localTime > remoteTime) {
               // Local is newer - upload it
@@ -699,7 +716,6 @@ class FirebaseSyncService {
               console.log(`Firebase: Uploaded book "${localBook.title}" (local is newer)`);
             } else if (remoteTime > localTime) {
               // Remote is newer - download it instead
-              const remoteBook = this.parseRemoteBook(remoteDocSnap.id, remoteData);
               await localStorageService.saveBook(remoteBook);
               console.log(`Firebase: Downloaded book "${remoteBook.title}" (remote is newer)`);
             } else {
